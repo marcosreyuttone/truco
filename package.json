@@ -1,0 +1,10 @@
+{
+  "name": "truco-solver",
+  "version": "1.0.0",
+  "description": "Solver y juego de Truco argentino (1v1) con IA por Monte Carlo y valor esperado.",
+  "type": "module",
+  "scripts": {
+    "test": "node test/run.js"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Truco Solver</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>🃏 Truco Solver</h1>
+    <p>Truco argentino 1v1 · IA por Monte Carlo y valor esperado (neutral al riesgo)</p>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" data-view="play">Jugar</button>
+    <button class="tab" data-view="solver">Solver</button>
+  </div>
+
+  <main>
+    <!-- ============ JUGAR ============ -->
+    <section id="view-play" class="view active">
+      <div class="panel scoreboard">
+        <div class="me"><div>Vos</div><div class="score" id="score-me">0</div></div>
+        <div><div>Máquina</div><div class="score" id="score-ai">0</div></div>
+      </div>
+
+      <div class="panel">
+        <div class="label" id="ai-hand-label">Mano de la máquina</div>
+        <div class="hand" id="ai-hand"></div>
+      </div>
+
+      <div class="panel">
+        <div class="label" id="table-label">Mesa</div>
+        <div class="table-cards" id="table-cards"></div>
+      </div>
+
+      <div class="panel">
+        <div class="label">Tu mano <span id="mano-indicator" class="hint"></span></div>
+        <div class="hand" id="my-hand"></div>
+        <div class="actions" id="play-actions"></div>
+        <div class="actions">
+          <button class="act secondary" id="btn-hint">💡 Sugerencia</button>
+          <button class="act secondary" id="btn-new-hand">Nueva mano</button>
+          <button class="act danger" id="btn-new-game">Nueva partida</button>
+        </div>
+      </div>
+
+      <div class="panel reasoning" id="play-reasoning">
+        <div class="muted">La explicación de la máquina aparecerá acá.</div>
+      </div>
+
+      <div class="panel">
+        <div class="label">Registro</div>
+        <div class="log" id="play-log"></div>
+      </div>
+    </section>
+
+    <!-- ============ SOLVER ============ -->
+    <section id="view-solver" class="view">
+      <div class="panel">
+        <div class="form-row">
+          <label>Nosotros <input type="number" id="s-score-me" min="0" max="29" value="0" style="width:60px" /></label>
+          <label>Ellos <input type="number" id="s-score-them" min="0" max="29" value="0" style="width:60px" /></label>
+          <label>¿Quién es mano?
+            <select id="s-mano">
+              <option value="0">Yo</option>
+              <option value="1">El rival</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="form-row">
+          <label>Tus 3 cartas:</label>
+          <div class="cards-input" id="s-my-cards"></div>
+        </div>
+
+        <div class="form-row" style="flex-direction:column; align-items:flex-start">
+          <label>Cartas jugadas en la mano (en orden):</label>
+          <div class="played-list" id="s-played-list"></div>
+          <button class="act secondary" id="s-add-play" type="button">+ Agregar carta jugada</button>
+          <div class="hint">Agregá en orden quién tiró y qué carta. La 1ª carta la tira el "mano".</div>
+        </div>
+
+        <div class="form-row">
+          <label>Situación de apuesta actual:
+            <select id="s-situation">
+              <option value="play">Me toca jugar / cantar</option>
+              <option value="envido">Me cantaron ENVIDO</option>
+              <option value="envido-envido">Me cantaron ENVIDO ENVIDO</option>
+              <option value="real">Me cantaron REAL ENVIDO</option>
+              <option value="envido-real">Me cantaron ENVIDO + REAL ENVIDO</option>
+              <option value="falta">Me cantaron FALTA ENVIDO</option>
+              <option value="truco">Me cantaron TRUCO</option>
+              <option value="retruco">Me cantaron RETRUCO</option>
+              <option value="valecuatro">Me cantaron VALE CUATRO</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button class="act" id="s-solve">🔎 Resolver</button>
+        </div>
+      </div>
+
+      <div class="panel reasoning" id="s-result">
+        <div class="muted">Cargá la situación y tocá "Resolver".</div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
