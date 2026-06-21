@@ -4,7 +4,8 @@
   "description": "Solver y juego de Truco argentino (1v1) con IA por Monte Carlo y valor esperado.",
   "type": "module",
   "scripts": {
-    "test": "node test/run.js"
+    "test": "node test/run.js",
+    "simulate": "node test/simulate.js"
   },
   "license": "MIT"
 }

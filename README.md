@@ -186,6 +186,31 @@ explotabilidad con *best response* para certificar cercanía a Nash. La
 implementación actual (Paper 2) puede servir de **baseline** y banco de pruebas
 para esa migración.
 
+## Validación empírica
+
+Para verificar que la metodología (Paper 2) realmente juega bien, hay un
+simulador de **partidas enteras** que la enfrenta a rivales baseline alternando
+asiento y quién reparte:
+
+```bash
+node test/simulate.js 150 40   # 150 partidas por match, 40 muestras Monte Carlo
+```
+
+Resultados típicos (a 30 puntos, 1v1):
+
+| Match | Victorias de la IA |
+|---|---|
+| IA vs Aleatorio | ~87% |
+| IA vs Heurístico competente | ~97% |
+| IA vs IA (espejo) | ~50% (sin sesgo de asiento) |
+
+Como control, el bot **heurístico** (canta envido con buen tanto, acepta truco
+con manos fuertes, juega la carta más alta, no farolea) le gana ~89% al
+aleatorio: es un rival válido, no uno roto. Aun así la IA lo supera con holgura,
+porque explota su juego predecible (secuencia óptima de cartas, apuestas por
+valor + farol balanceado, y envido exacto). El espejo IA-vs-IA cercano al 50%
+confirma que no hay ventaja artificial de asiento en el motor.
+
 ## Reglas implementadas
 
 - Mazo español de 40 cartas y jerarquía completa del truco
