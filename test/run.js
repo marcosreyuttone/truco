@@ -21,6 +21,7 @@ import {
   handWinProbability,
   responseDistribution,
   singProbability,
+  trucoSingProb,
 } from '../src/ai.js';
 
 let passed = 0;
@@ -206,10 +207,16 @@ const bluffFreq = prob(weakResp, 'call');
 ok(bluffFreq > 0 && bluffFreq < 0.25, `el farol con mano floja está acotado (${bluffFreq.toFixed(2)})`);
 ok(prob(weakResp, 'noquiero') > 0.7, 'con mano floja se baja la mayoría de las veces');
 
-// singProbability: monótona y acotada.
-ok(singProbability(0.95) > 0.9, 'con mano fuerte se canta casi siempre');
-ok(singProbability(0.4) < 0.2, 'con mano media casi no se canta');
-ok(singProbability(0.0) > 0 && singProbability(0.0) <= 0.4, 'farol de canto acotado con mano nula');
+// singProbability (envido): monótona y acotada.
+ok(singProbability(0.95) > 0.9, 'con buen tanto se canta casi siempre');
+ok(singProbability(0.4) < 0.2, 'con tanto medio casi no se canta');
+ok(singProbability(0.0) > 0 && singProbability(0.0) <= 0.4, 'farol de envido acotado');
+
+// trucoSingProb: selectivo (no canta con manos mediocres), penaliza cantar de movida.
+ok(trucoSingProb(0.6) < 0.1, 'no se canta truco con mano mediocre (60%)');
+ok(trucoSingProb(0.95) > 0.5 && trucoSingProb(0.95) <= 0.85, 'con manaza se canta seguido pero no siempre');
+ok(trucoSingProb(0.95, true) < trucoSingProb(0.95, false), 'cantar de movida es menos frecuente que esperar');
+ok(trucoSingProb(0.0) > 0 && trucoSingProb(0.0) < 0.2, 'farol de truco chico y acotado');
 
 console.log(`\n${passed} pruebas OK, ${failed} fallaron.`);
 process.exit(failed > 0 ? 1 : 0);

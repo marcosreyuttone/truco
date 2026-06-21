@@ -328,10 +328,24 @@ export function responseDistribution(p, Vq, Vnq, raise) {
 
 // Probabilidad de iniciar una apuesta (cantar): valor con manos fuertes + farol
 // acotado con manos muy flojas; el medio se juega sin cantar.
+// Probabilidad de cantar ENVIDO: valor con buen tanto + farol chico.
 export function singProbability(p) {
-  const value = ramp(p, 0.55, 0.8);
-  const bluff = ramp(1 - p, 0.86, 1.0) * 0.4;
+  const value = ramp(p, 0.62, 0.84);
+  const bluff = ramp(1 - p, 0.93, 1.0) * 0.08;
   return clamp01(Math.max(value, bluff));
+}
+
+// Probabilidad de cantar/subir TRUCO. Más selectiva que el envido:
+//  - sólo cantás por valor con mano realmente fuerte (no con cualquier 55%),
+//  - el farol es chico y desde lo muy flojo,
+//  - "opening" (cantar de movida, sin que se jugara nada) baja la frecuencia:
+//    casi siempre conviene esperar a ver la primera baza antes de cantar.
+export function trucoSingProb(p, opening = false) {
+  const value = ramp(p, 0.68, 0.9) * 0.8; // ni con manaza cantás el 100%
+  const bluff = ramp(1 - p, 0.9, 1.0) * 0.12;
+  let prob = clamp01(Math.max(value, bluff));
+  if (opening) prob *= 0.5;
+  return prob;
 }
 
 function sampleDist(dist) {
@@ -477,7 +491,10 @@ function decidePlay(state, player, { mix, samples }) {
 
   if (canCallTruco || (canRaise && nextLevel)) {
     const bet = canCallTruco ? 'truco' : nextLevel;
-    const pSing = singProbability(p);
+    // "De movida": primera baza, todavía sin cartas en la mesa → conviene esperar.
+    const trick = state.tricks[state.tricks.length - 1];
+    const opening = canCallTruco && state.results.length === 0 && trick.plays.length === 0;
+    const pSing = trucoSingProb(p, opening);
     if (gate(pSing, mix)) {
       reasoning.push(`P(ganar la mano) ≈ ${(p * 100).toFixed(0)}%.`);
       reasoning.push(`Cantar ${labelLocal(bet)} con frecuencia ${(pSing * 100).toFixed(0)}% (valor + farol acotado).`);

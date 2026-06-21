@@ -200,8 +200,8 @@ Resultados típicos (a 30 puntos, 1v1):
 
 | Match | Victorias de la IA |
 |---|---|
-| IA vs Aleatorio | ~87% |
-| IA vs Heurístico competente | ~97% |
+| IA vs Aleatorio | ~90% |
+| IA vs Heurístico competente | ~85% |
 | IA vs IA (espejo) | ~50% (sin sesgo de asiento) |
 
 Como control, el bot **heurístico** (canta envido con buen tanto, acepta truco
