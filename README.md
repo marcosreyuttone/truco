@@ -211,6 +211,96 @@ porque explota su juego predecible (secuencia óptima de cartas, apuestas por
 valor + farol balanceado, y envido exacto). El espejo IA-vs-IA cercano al 50%
 confirma que no hay ventaja artificial de asiento en el motor.
 
+## Cómo jugar así vos: reglas prácticas y el "reloj del Truco"
+
+La IA hace cuentas, pero podés aproximar su juego en la mesa con reglas
+mnemotécnicas. Todos los números de abajo salen de la matemática real del juego
+(distribución exacta del envido y simulación de manos), no de la intuición.
+
+### 🕐 El reloj del Truco (para querer/no querer)
+
+Pensá tu **chance de ganar la mano como los minutos de un reloj**: la vuelta
+entera (`:60`) es ganar seguro, la **media** (`:30`) es mano pareja (50%).
+Las líneas para **querer** una apuesta caen así:
+
+| Apuesta | Querés desde… | En el reloj |
+|---|---|---|
+| **Truco** | 25% | pasando **el cuarto** (`:15`) |
+| **Retruco** | ~17% | pasando los **`:10`** |
+| **Vale cuatro** | ~12,5% | pasando los **`:07`** |
+
+Regla de oro: **cuanto más grande la apuesta, menos te tiene que marcar el reloj
+para pagar** (porque ya hay más puntos en juego y arriesgás casi lo mismo). Sale
+de `querer si p ≥ (Vq − Vnq) / (2·Vq)`.
+
+### ✋ Leer tu mano de un vistazo (¿qué hora marca?)
+
+Clasificá tus 3 cartas en cuatro grupos:
+
+- **Bravas** (las 4 de arriba): 1 de espada, 1 de basto, 7 de espada, 7 de oro.
+- **Altas**: los **3** y los **2**.
+- **Medias**: ancho falso (1 oro/copa), 12, 11, 10.
+- **Bajas**: 7 falso (copa/basto), 6, 5, 4.
+
+Y mirá cuántas bravas/altas tenés:
+
+| Tu mano | P(ganar) ≈ | En el reloj | Qué hacer |
+|---|---|---|---|
+| 2+ bravas | **97%** | casi `:60` | recantá sin miedo |
+| 1 brava + 1 alta | **91%** | `:55` | querés todo / recantás |
+| 2 altas (dos 3/2) | **76%** | `:45` | cantás por valor |
+| 1 brava sola | **66%** | `:40` | cantás / querés |
+| 1 alta sola (un 3 o 2) | **48%** | `:29` (la media) | mano pareja: depende del puesto |
+| solo medias y bajas | **22%** | `:13` | **no llega al cuarto** → no quieras truco |
+
+Mnemónico: **"contá bravas y altas, y ubicá la aguja"**. Si la aguja no pasa el
+cuarto (`:15`), no querés el truco (salvo farol, ver abajo).
+
+### 🎯 Envido: el 27 es el número mágico
+
+El envido **promedio es ~17**, y **4 de cada 10 manos tienen menos de 20**. Con
+eso, tus chances de **ganar el envido** contra un tanto al azar son:
+
+| Tu tanto | Si sos **pie** | Si sos **mano** (ganás los empates) |
+|---|---|---|
+| 23 | 52% | 57% |
+| 25 | 62% | 68% |
+| **27** | **75%** | **83%** |
+| 30 | 91% | 94% |
+| 33 | 98% | 100% |
+
+Reglas: **del 27 para arriba ganás 3 de cada 4** → cantá/queré casi siempre.
+**23 es la línea del ~50%** (un poco mejor si sos mano). Con **30+ metés real
+envido o falta**. Abajo de 20, no quieras (salvo farol corto).
+
+### 🎭 Faroleo balanceado (para no ser leído)
+
+- Faroleá **poco y desde lo peor**: con la mano perdida, mejor **de pie** y en la
+  **última baza**. Como guía, **no más de 1 farol por cada 2–3 cantos de valor**
+  (esa proporción es la que deja al rival indiferente entre pagarte o bajarse).
+- **Mezclá en el límite**: si tu aguja está justo en el cuarto (truco) o en el
+  27 (envido), **tirá una moneda**. Ahí querer o no querer rinde casi igual, así
+  que randomizar te hace impredecible **sin perder puntos**.
+- El **envido se farolea menos** que el truco (es exacto y fácil de calcular para
+  el rival).
+
+### 🔧 Ajustes por información
+
+El reloj asume un rival al azar. Corregí la aguja con lo que ves:
+
+- Si el rival **te canta truco**, suele tener algo → **bajá** un poco tu estimación.
+- Si **no cantó envido** teniendo el turno, probablemente **no tiene buen tanto**.
+- Las **cartas ya jugadas** salen del mazo: si cayeron las bravas, tus altas
+  **suben** de valor.
+
+### Reglas de oro
+
+1. Contá **bravas y altas** y ubicá la aguja del reloj.
+2. **Querés** si pasás del **cuarto** (truco), `:10` (retruco), `:07` (vale cuatro).
+3. **27** es el número del envido; **30+** es real/falta.
+4. **Faroleá poco**, de pie y en la última; **mezclá** en el límite.
+5. Ajustá la aguja con lo que **cantó o no cantó** el rival.
+
 ## Reglas implementadas
 
 - Mazo español de 40 cartas y jerarquía completa del truco
