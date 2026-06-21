@@ -21,9 +21,20 @@
     <!-- ============ JUGAR ============ -->
     <section id="view-play" class="view active">
       <div class="panel scoreboard">
-        <div class="me"><div>Vos</div><div class="score" id="score-me">0</div></div>
-        <div><div>Máquina</div><div class="score" id="score-ai">0</div></div>
+        <div class="who me">
+          <div>Vos</div>
+          <div class="score" id="score-me">0</div>
+          <div class="chip hidden" id="chip-me">Mano</div>
+        </div>
+        <div class="vs">—</div>
+        <div class="who">
+          <div>Máquina</div>
+          <div class="score" id="score-ai">0</div>
+          <div class="chip hidden" id="chip-ai">Mano</div>
+        </div>
       </div>
+
+      <div id="status-banner">Empezá la partida</div>
 
       <div class="panel">
         <div class="label" id="ai-hand-label">Mano de la máquina</div>
@@ -35,13 +46,13 @@
         <div class="table-cards" id="table-cards"></div>
       </div>
 
-      <div class="panel">
-        <div class="label">Tu mano <span id="mano-indicator" class="hint"></span></div>
+      <div class="panel" id="my-panel">
+        <div class="label">Tu mano</div>
         <div class="hand" id="my-hand"></div>
         <div class="actions" id="play-actions"></div>
         <div class="actions">
-          <button class="act secondary" id="btn-hint">💡 Sugerencia</button>
-          <button class="act secondary" id="btn-new-hand">Nueva mano</button>
+          <button class="act ghost" id="btn-hint">💡 Sugerencia</button>
+          <button class="act ghost" id="btn-new-hand">Nueva mano</button>
           <button class="act danger" id="btn-new-game">Nueva partida</button>
         </div>
       </div>

@@ -87,17 +87,29 @@ function render() {
     ? 'Mano de la máquina (revelada)'
     : `Mano de la máquina (${state.hands[1].length} cartas)`;
 
-  // Mesa: cartas jugadas por baza
+  // Mesa: cartas jugadas, agrupadas por baza, con el ganador resaltado.
   const table = $('table-cards');
   clear(table);
   for (const trick of state.tricks) {
     for (const play of trick.plays) {
-      const el = cardEl(play.card, { small: true });
-      el.title = play.player === 0 ? 'Vos' : 'Máquina';
-      if (play.player === 1) el.style.outline = '2px solid rgba(192,57,43,0.6)';
-      else el.style.outline = '2px solid rgba(174,233,197,0.6)';
-      table.appendChild(el);
+      const pair = document.createElement('div');
+      pair.className = 'played-pair';
+      if (trick.winner !== undefined && trick.winner === play.player) {
+        pair.classList.add('win-card');
+      }
+      const tag = document.createElement('div');
+      tag.className = 'tag';
+      tag.textContent = play.player === 0 ? 'Vos' : 'Máquina';
+      pair.appendChild(cardEl(play.card, { small: true }));
+      pair.appendChild(tag);
+      table.appendChild(pair);
     }
+  }
+  if (table.children.length === 0) {
+    const empty = document.createElement('span');
+    empty.className = 'muted';
+    empty.textContent = 'Sin cartas todavía';
+    table.appendChild(empty);
   }
 
   // Tu mano
@@ -122,8 +134,12 @@ function render() {
     myHand.appendChild(el);
   }
 
-  // Indicador de mano
-  $('mano-indicator').textContent = state.mano === 0 ? '(sos mano)' : '(es mano la máquina)';
+  // Chips de "mano" en el tanteador.
+  $('chip-me').classList.toggle('hidden', state.mano !== 0);
+  $('chip-ai').classList.toggle('hidden', state.mano !== 1);
+
+  // Banner de estado + resaltado del panel del jugador.
+  updateStatus();
 
   // Botones de acción (cantos / respuestas)
   renderActions();
@@ -147,19 +163,47 @@ function render() {
   }
 }
 
+function updateStatus() {
+  const banner = $('status-banner');
+  const myPanel = $('my-panel');
+  let text = '';
+  let cls = '';
+  if (state.phase === 'game-over') {
+    const won = state.scores[0] > state.scores[1];
+    text = won ? '🏆 ¡Ganaste la partida!' : '😞 Ganó la máquina';
+    cls = won ? 'win' : 'lose';
+  } else if (state.phase === 'hand-over') {
+    const won = state.handWinner === 0;
+    text = (won ? '✅ Ganaste la mano' : '❌ La máquina ganó la mano') + ` (+${state.handPoints})`;
+    cls = won ? 'win' : 'lose';
+  } else {
+    const actor = state.phase === 'play' ? state.turn : state.responder;
+    if (actor === 1) {
+      text = '<span class="spinner"></span>La máquina está pensando…';
+      cls = 'thinking';
+    } else {
+      cls = 'your-turn';
+      if (state.phase === 'truco-response') {
+        text = `🔔 Te cantaron ${labelBet(state.truco.chain[state.truco.chain.length - 1])} — ¿qué hacés?`;
+      } else if (state.phase === 'envido-response') {
+        text = `🔔 Te cantaron ${labelBet(state.envido.chain[state.envido.chain.length - 1])} — ¿qué hacés?`;
+      } else {
+        text = '🎯 Tu turno: jugá una carta o cantá';
+      }
+    }
+  }
+  banner.innerHTML = text;
+  banner.className = cls;
+  myPanel.classList.toggle('highlight', cls === 'your-turn');
+}
+
 function renderActions() {
   const box = $('play-actions');
   clear(box);
   if (state.phase === 'game-over' || state.phase === 'hand-over') return;
 
   const actor = state.phase === 'play' ? state.turn : state.responder;
-  if (actor !== 0) {
-    const span = document.createElement('span');
-    span.className = 'muted';
-    span.textContent = 'Pensando…';
-    box.appendChild(span);
-    return;
-  }
+  if (actor !== 0) return; // el banner ya muestra "pensando…"
 
   const actions = legalActions(state).filter((a) => a.player === 0);
   for (const a of actions) {

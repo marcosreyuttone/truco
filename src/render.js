@@ -5,13 +5,14 @@ export function cardEl(card, { small = false, back = false } = {}) {
   const el = document.createElement('div');
   el.className = 'card' + (small ? ' small' : '') + (back ? ' back' : ' ' + card.suit);
   if (back) {
-    el.innerHTML = '<div class="rank"></div>';
+    el.innerHTML = '<div class="card-back-logo">🃏</div>';
     return el;
   }
+  const sym = SUIT_SYMBOL[card.suit];
   el.innerHTML = `
-    <div class="rank">${card.rank}</div>
-    <div class="suit">${SUIT_SYMBOL[card.suit]}</div>
-    <div class="suit-name">${card.suit}</div>`;
+    <div class="corner top"><span class="r">${card.rank}</span><span class="s">${sym}</span></div>
+    <div class="pip">${sym}</div>
+    <div class="corner bot"><span class="r">${card.rank}</span><span class="s">${sym}</span></div>`;
   return el;
 }
 
