@@ -8,7 +8,7 @@ import { newGame, nextHand, legalActions, applyAction } from '../src/engine.js';
 import { recommend } from '../src/ai.js';
 import { envidoPoints, trucoPower } from '../src/cards.js';
 
-const GAMES = Number(process.argv[2] || 200);
+const GAMES = Number(process.argv[2] || 80);
 const SAMPLES = Number(process.argv[3] || 40);
 
 // ---- Utilidades ----

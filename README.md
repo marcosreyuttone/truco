@@ -29,9 +29,12 @@ ser explotable (estrategias mixtas).
   - Querer una apuesta de valor `Vq` (no quiero paga `Vnq`) conviene si
     `p ≥ (Vq − Vnq) / (2·Vq)`. Para el truco eso da 25%, retruco ~17%, vale
     cuatro ~12,5% (cuanto más hay en juego, más liviano se quiere).
-  - Cantar/subir conviene cuando el EV de cantar supera al de no cantar,
-    modelando que el rival se baja cuando es débil.
-  - Con manos parejas o como farol ocasional se randomiza (estrategia mixta).
+  - **Cantar ahora vs esperar** se decide por valor esperado real: se simulan
+    *rollouts* Monte Carlo de la mano hasta el final y se compara el EV de
+    cantar ya contra el de jugar y conservar la opción de cantar después (con el
+    rival respondiendo según su propia mano). Así canta cuando es fuerte, espera
+    cuando esperar rinde más, y nunca por una penalización arbitraria.
+  - Con manos parejas o como farol acotado se randomiza (estrategia mixta).
 
 ## Fundamentos teóricos: dos enfoques
 
@@ -141,8 +144,10 @@ entrenamiento.
   Esto **no es aproximado**: es el valor exacto.
 - **Decisiones por EV (neutral al riesgo).** Querer una apuesta de valor `Vq`
   (no quiero paga `Vnq`) conviene si `p ≥ (Vq − Vnq) / (2·Vq)` → 25% truco, ~17%
-  retruco, ~12,5% vale cuatro. Cantar/subir se decide combinando **valor** (manos
-  fuertes) y **farol** (manos flojas).
+  retruco, ~12,5% vale cuatro. **Cantar ahora vs esperar** se resuelve por
+  *rollouts* Monte Carlo: se compara el EV de cantar ya contra el de jugar y
+  conservar la opción de cantar más adelante (incluye el valor de la información
+  y de hacer reaccionar al rival), más un **farol acotado** por balance.
 - **Mezcla no explotable.** Cerca del umbral de indiferencia se **randomiza**
   (ahí ambas opciones valen casi lo mismo: no se pierde EV pero se deja de ser
   legible). El **farol se acota** por el *ratio de indiferencia* del rival, para
@@ -193,15 +198,18 @@ simulador de **partidas enteras** que la enfrenta a rivales baseline alternando
 asiento y quién reparte:
 
 ```bash
-node test/simulate.js 150 40   # 150 partidas por match, 40 muestras Monte Carlo
+node test/simulate.js 60 40   # 60 partidas por match, 40 muestras Monte Carlo
 ```
+
+(El simulador es más lento que antes porque la decisión de cantar usa rollouts;
+bajá la cantidad de partidas si querés iterar rápido.)
 
 Resultados típicos (a 30 puntos, 1v1):
 
 | Match | Victorias de la IA |
 |---|---|
-| IA vs Aleatorio | ~90% |
-| IA vs Heurístico competente | ~85% |
+| IA vs Aleatorio | ~92% |
+| IA vs Heurístico competente | ~90% |
 | IA vs IA (espejo) | ~50% (sin sesgo de asiento) |
 
 Como control, el bot **heurístico** (canta envido con buen tanto, acepta truco

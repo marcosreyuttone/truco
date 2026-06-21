@@ -17,6 +17,7 @@ import {
   shuffle,
   compareCards,
   envidoPoints,
+  trucoPower,
 } from './cards.js';
 import {
   handWinner,
@@ -26,6 +27,7 @@ import {
   TRUCO_QUIERO,
   TRUCO_NOQUIERO,
   other,
+  applyAction,
 } from './engine.js';
 
 // ---------- Resolución exacta del final de cartas (minimax) ----------
@@ -335,19 +337,6 @@ export function singProbability(p) {
   return clamp01(Math.max(value, bluff));
 }
 
-// Probabilidad de cantar/subir TRUCO. Más selectiva que el envido:
-//  - sólo cantás por valor con mano realmente fuerte (no con cualquier 55%),
-//  - el farol es chico y desde lo muy flojo,
-//  - "opening" (cantar de movida, sin que se jugara nada) baja la frecuencia:
-//    casi siempre conviene esperar a ver la primera baza antes de cantar.
-export function trucoSingProb(p, opening = false) {
-  const value = ramp(p, 0.68, 0.9) * 0.8; // ni con manaza cantás el 100%
-  const bluff = ramp(1 - p, 0.9, 1.0) * 0.12;
-  let prob = clamp01(Math.max(value, bluff));
-  if (opening) prob *= 0.5;
-  return prob;
-}
-
 function sampleDist(dist) {
   let r = Math.random();
   for (const d of dist) {
@@ -373,6 +362,96 @@ function describeMix(dist) {
 // Decisión binaria (cantar / no cantar) con frecuencia probTrue.
 function gate(probTrue, mix) {
   return mix ? Math.random() < probTrue : probTrue >= 0.5;
+}
+
+// ---------- Valor de cantar vs esperar (rollouts Monte Carlo) ----------
+//
+// Para decidir si conviene cantar truco AHORA o esperar, comparamos el valor
+// esperado de cada opción jugando la mano hasta el final muchas veces. En cada
+// simulación muestreamos una mano posible del rival (creencia, no hacemos
+// trampa) y ambos juegan con una política rápida. Esperar incluye, naturalmente,
+// la opción de cantar más adelante (cuando haya más info o el rival reaccione).
+
+const FAST_WIN = 6; // muestras MC de la política rápida dentro del rollout
+
+// Tanto de envido rápido (sin enumerar): puntos de la mano completa.
+function envidoQuick(state, player) {
+  return envidoPoints(fullHand(state, player));
+}
+
+// Elección de carta rápida (heurística, sin búsqueda): si respondo, la menor
+// que gane (si no, la más baja); si lidero, la más alta.
+function fastCard(state, player) {
+  const hand = state.hands[player];
+  const trick = state.tricks[state.tricks.length - 1];
+  if (trick.plays.length === 1 && trick.plays[0].player !== player) {
+    const oppCard = trick.plays[0].card;
+    const winners = hand
+      .filter((c) => compareCards(c, oppCard) > 0)
+      .sort((a, b) => trucoPower(a) - trucoPower(b));
+    if (winners.length) return winners[0];
+    return hand.slice().sort((a, b) => trucoPower(a) - trucoPower(b))[0];
+  }
+  return hand.slice().sort((a, b) => trucoPower(b) - trucoPower(a))[0];
+}
+
+// Política rápida para usar DENTRO de los rollouts (no hace más rollouts).
+function fastPolicy(state, player) {
+  if (state.phase === 'envido-response') {
+    const pts = envidoQuick(state, player);
+    const wantP = clamp01((pts - 22) / 8); // 22→0, 30→1
+    return Math.random() < wantP ? { type: 'quiero' } : { type: 'noquiero' };
+  }
+  if (state.phase === 'truco-response') {
+    const p = handWinProbability(state, player, FAST_WIN);
+    const last = state.truco.chain[state.truco.chain.length - 1];
+    const Vq = TRUCO_QUIERO[last];
+    const Vnq = TRUCO_NOQUIERO[last];
+    const next = { truco: 'retruco', retruco: 'valecuatro' }[last];
+    const raise = next ? { bet: next, Vq: TRUCO_QUIERO[next], Vnq: TRUCO_NOQUIERO[next] } : null;
+    return sampleDist(responseDistribution(p, Vq, Vnq, raise));
+  }
+  // phase 'play'
+  if (state.results.length === 0 && !state.envido.resolved && state.envido.state === 'none') {
+    if (envidoQuick(state, player) >= 28 && Math.random() < 0.6) {
+      return { type: 'call', bet: 'envido' };
+    }
+  }
+  const canCall = state.truco.chain.length === 0;
+  const canRaise = state.truco.accepted && state.truco.canRaiseBy === player;
+  const nextLevel = canRaise
+    ? { truco: 'retruco', retruco: 'valecuatro' }[state.truco.chain[state.truco.chain.length - 1]]
+    : null;
+  if (canCall || (canRaise && nextLevel)) {
+    const p = handWinProbability(state, player, FAST_WIN);
+    const pv = clamp01((p - 0.7) / 0.2) * 0.7 + (p < 0.12 ? 0.1 : 0);
+    if (Math.random() < pv) return { type: 'call', bet: canCall ? 'truco' : nextLevel };
+  }
+  return { type: 'play', card: fastCard(state, player) };
+}
+
+// Valor esperado (en puntos netos de la mano) de tomar `firstAction` ahora y
+// seguir con la política rápida. Promedia sobre manos posibles del rival.
+function rolloutEV(state, player, firstAction, R) {
+  const opp = other(player);
+  const known = state.hands[player].concat(allPlayed(state));
+  const unknownDeck = removeCards(makeDeck(), known);
+  const oppCount = state.hands[opp].length;
+  let sum = 0;
+  for (let i = 0; i < R; i++) {
+    const s = structuredClone(state);
+    s.hands[opp] = shuffle(unknownDeck).slice(0, oppCount); // creencia sobre el rival
+    const base = s.scores.slice();
+    let st = applyAction(s, firstAction);
+    let guard = 0;
+    while (st.phase !== 'hand-over' && st.phase !== 'game-over' && guard < 100) {
+      const a = fastPolicy(st, st.phase === 'play' ? st.turn : st.responder);
+      st = applyAction(st, a);
+      guard++;
+    }
+    sum += st.scores[player] - base[player] - (st.scores[opp] - base[opp]);
+  }
+  return sum / R;
 }
 
 // ---------- Recomendación principal ----------
@@ -480,7 +559,9 @@ function decidePlay(state, player, { mix, samples }) {
     }
   }
 
-  // 2) Truco (cantar o subir).
+  // 2) Truco: comparar por VALOR ESPERADO "cantar ahora" vs "esperar" (jugar y
+  //    conservar la opción de cantar después). Sin penalizaciones: el valor de
+  //    esperar (más información, hacer reaccionar al rival) sale del cálculo.
   const p = handWinProbability(state, player, samples);
   const trucoState = state.truco;
   const canCallTruco = trucoState.chain.length === 0;
@@ -491,17 +572,22 @@ function decidePlay(state, player, { mix, samples }) {
 
   if (canCallTruco || (canRaise && nextLevel)) {
     const bet = canCallTruco ? 'truco' : nextLevel;
-    // "De movida": primera baza, todavía sin cartas en la mesa → conviene esperar.
-    const trick = state.tricks[state.tricks.length - 1];
-    const opening = canCallTruco && state.results.length === 0 && trick.plays.length === 0;
-    const pSing = trucoSingProb(p, opening);
-    if (gate(pSing, mix)) {
-      reasoning.push(`P(ganar la mano) ≈ ${(p * 100).toFixed(0)}%.`);
-      reasoning.push(`Cantar ${labelLocal(bet)} con frecuencia ${(pSing * 100).toFixed(0)}% (valor + farol acotado).`);
-      return { action: { type: 'call', bet }, reasoning, winProb: p, singProb: pSing };
-    }
-    if (pSing > 0.1) {
-      reasoning.push(`(${labelLocal(bet)}: se cantaría ${(pSing * 100).toFixed(0)}% de las veces; ahora conviene jugar.)`);
+    const R = Math.max(8, Math.min(40, Math.round(samples / 3)));
+    const bestCard = chooseCard(state, player, Math.max(40, Math.round(samples / 2))).card;
+    const evCanta = rolloutEV(state, player, { type: 'call', bet }, R);
+    const evWait = rolloutEV(state, player, { type: 'play', card: bestCard }, R);
+    const diff = evCanta - evWait;
+    // Mezcla cerca de la indiferencia (logística sobre la diferencia de EV) +
+    // farol acotado con mano muy floja, para no ser explotable.
+    let cantaProb = 1 / (1 + Math.exp(-2.5 * diff));
+    const bluff = ramp(1 - p, 0.9, 1.0) * 0.1;
+    cantaProb = Math.min(0.92, clamp01(Math.max(cantaProb, bluff)));
+    reasoning.push(`P(ganar la mano) ≈ ${(p * 100).toFixed(0)}%.`);
+    reasoning.push(
+      `EV cantar ${labelLocal(bet)} = ${evCanta.toFixed(2)} vs esperar = ${evWait.toFixed(2)} → cantar ${(cantaProb * 100).toFixed(0)}%.`
+    );
+    if (gate(cantaProb, mix)) {
+      return { action: { type: 'call', bet }, reasoning, winProb: p, singProb: cantaProb };
     }
   }
 

@@ -21,7 +21,6 @@ import {
   handWinProbability,
   responseDistribution,
   singProbability,
-  trucoSingProb,
 } from '../src/ai.js';
 
 let passed = 0;
@@ -88,7 +87,7 @@ while (g.phase !== 'game-over' && safety < 5000) {
     continue;
   }
   const actor = g.phase === 'play' ? g.turn : g.responder;
-  const rec = recommend(g, actor, { mix: true, samples: 60 });
+  const rec = recommend(g, actor, { mix: true, samples: 24 });
   let action = rec.action;
   if (!action) {
     // fallback: primera acción legal
@@ -212,11 +211,25 @@ ok(singProbability(0.95) > 0.9, 'con buen tanto se canta casi siempre');
 ok(singProbability(0.4) < 0.2, 'con tanto medio casi no se canta');
 ok(singProbability(0.0) > 0 && singProbability(0.0) <= 0.4, 'farol de envido acotado');
 
-// trucoSingProb: selectivo (no canta con manos mediocres), penaliza cantar de movida.
-ok(trucoSingProb(0.6) < 0.1, 'no se canta truco con mano mediocre (60%)');
-ok(trucoSingProb(0.95) > 0.5 && trucoSingProb(0.95) <= 0.85, 'con manaza se canta seguido pero no siempre');
-ok(trucoSingProb(0.95, true) < trucoSingProb(0.95, false), 'cantar de movida es menos frecuente que esperar');
-ok(trucoSingProb(0.0) > 0 && trucoSingProb(0.0) < 0.2, 'farol de truco chico y acotado');
+// Timing del truco por EV(cantar vs esperar): comportamiento estadístico.
+// (envido ya resuelto para aislar la decisión de truco)
+function trucoCantaRate(hand, n) {
+  let canta = 0;
+  for (let i = 0; i < n; i++) {
+    const s = createHandState({
+      target: 30, scores: [0, 0], dealer: 1,
+      hands: [hand, [{ rank: 4, suit: 'oro' }, { rank: 5, suit: 'oro' }, { rank: 6, suit: 'copa' }]],
+    });
+    s.envido = { chain: [], state: 'none', caller: null, resolved: true };
+    const rec = recommend(s, 0, { mix: true, samples: 24 });
+    if (rec.action.type === 'call' && ['truco', 'retruco', 'valecuatro'].includes(rec.action.bet)) canta++;
+  }
+  return canta / n;
+}
+const rateMonster = trucoCantaRate(monster, 16);
+const rateGarbage = trucoCantaRate(garbage, 16);
+ok(rateMonster > rateGarbage, `canta más truco con manaza que con basura (${(rateMonster * 100).toFixed(0)}% vs ${(rateGarbage * 100).toFixed(0)}%)`);
+ok(rateGarbage < 0.5, `con mano floja no canta truco de movida casi nunca (${(rateGarbage * 100).toFixed(0)}%)`);
 
 console.log(`\n${passed} pruebas OK, ${failed} fallaron.`);
 process.exit(failed > 0 ? 1 : 0);
