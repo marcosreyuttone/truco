@@ -167,6 +167,18 @@ function renderResult(rec, state) {
   const box = $('s-result');
   const what = describeAction(rec.action);
   let html = `<div class="action-rec">✅ Recomendación: ${what}</div>`;
+
+  if (rec.distribution && rec.distribution.length) {
+    html += '<div class="hint" style="margin-top:6px">Estrategia óptima no explotable (mezclá así):</div>';
+    for (const d of rec.distribution) {
+      const pct = Math.round(d.prob * 100);
+      html += `<div style="display:flex;align-items:center;gap:8px;margin:2px 0">
+        <span style="width:90px">${escapeHtml(d.label)}</span>
+        <div class="bar" style="flex:1"><span style="width:${pct}%"></span></div>
+        <b style="width:42px;text-align:right">${pct}%</b></div>`;
+    }
+  }
+
   html += reasoningList(rec.reasoning);
 
   if (typeof rec.winProb === 'number' && !Number.isNaN(rec.winProb)) {

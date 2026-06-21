@@ -267,16 +267,102 @@ export function envidoAnalysis(state, me) {
 
 // ---------- Política de decisión por valor esperado ----------
 
-// Umbral de "quiero" para una apuesta tipo truco: aceptar si p >= (Vq-Vnq)/(2Vq).
+// Umbral de indiferencia "quiero": querer conviene si p >= (Vq-Vnq)/(2Vq).
 function quieroThreshold(Vq, Vnq) {
   return (Vq - Vnq) / (2 * Vq);
 }
-
-// EV (en puntos) de aceptar una apuesta de valor Vq con prob de ganar p.
 const evQuiero = (p, Vq) => Vq * (2 * p - 1);
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+// Rampa lineal: 0 si x<=lo, 1 si x>=hi.
+const ramp = (x, lo, hi) => clamp01((x - lo) / (hi - lo));
 
-// Recomendación principal. Devuelve { action, reasoning, winProb/envido, mix }.
-// opts.mix=true permite jugadas mixtas (bluff); opts.samples controla MC.
+// ---------- Estrategias mixtas (juego no explotable) ----------
+//
+// "Inexplotable" = que el rival no pueda sacar ventaja leyendo tus decisiones:
+//  1) Cerca del umbral de indiferencia mezclamos quiero/no quiero al azar. Ahí
+//     ambas valen casi lo mismo (no perdemos EV) pero dejamos de ser
+//     predecibles, así que un corte fijo no se puede explotar.
+//  2) Faroleamos (cantar/subir con manos flojas) a una frecuencia ACOTADA por
+//     el ratio de indiferencia del rival: que pagarnos o no pagarnos le dé lo
+//     mismo. Bluffear de más => nos pagan siempre; de menos => nos roban. El
+//     equilibrio está en el medio.
+//  3) Apostamos por valor con las manos fuertes, también de forma mezclada.
+// No es el Nash exacto de todo el truco (eso requeriría resolver el árbol
+// completo con CFR), pero acota fuertemente cuánto te pueden explotar.
+
+function normalizeDist(dist) {
+  const total = dist.reduce((s, d) => s + d.prob, 0) || 1;
+  for (const d of dist) d.prob /= total;
+  return dist.filter((d) => d.prob > 1e-6);
+}
+
+// Distribución mixta para responder una apuesta (no quiero / quiero / subir).
+export function responseDistribution(p, Vq, Vnq, raise) {
+  const t = quieroThreshold(Vq, Vnq);
+  const band = 0.07; // zona de mezcla alrededor del umbral
+  let quiero = ramp(p, t - band, t + band);
+  let no = 1 - quiero;
+
+  let raiseProb = 0;
+  let raiseAction = null;
+  let raiseLabel = '';
+  if (raise) {
+    raiseAction = { type: 'call', bet: raise.bet };
+    raiseLabel = labelLocal(raise.bet);
+    const t2 = quieroThreshold(raise.Vq, raise.Vnq);
+    // Subir por valor: manos muy fuertes (sale de la masa de "quiero").
+    const valueRaise = ramp(p, 0.8, 0.95) * quiero;
+    // Subir de farol: manos muy flojas; frecuencia acotada por t2 (balance).
+    const bluffRaise = ramp(1 - p, 0.86, 1.0) * Math.min(0.5, t2) * no;
+    raiseProb = valueRaise + bluffRaise;
+    quiero -= valueRaise;
+    no -= bluffRaise;
+  }
+
+  const dist = [];
+  if (no > 1e-6) dist.push({ action: { type: 'noquiero' }, prob: no, label: 'No quiero' });
+  if (quiero > 1e-6) dist.push({ action: { type: 'quiero' }, prob: quiero, label: 'Quiero' });
+  if (raiseProb > 1e-6) dist.push({ action: raiseAction, prob: raiseProb, label: raiseLabel });
+  return normalizeDist(dist);
+}
+
+// Probabilidad de iniciar una apuesta (cantar): valor con manos fuertes + farol
+// acotado con manos muy flojas; el medio se juega sin cantar.
+export function singProbability(p) {
+  const value = ramp(p, 0.55, 0.8);
+  const bluff = ramp(1 - p, 0.86, 1.0) * 0.4;
+  return clamp01(Math.max(value, bluff));
+}
+
+function sampleDist(dist) {
+  let r = Math.random();
+  for (const d of dist) {
+    if (r < d.prob) return d.action;
+    r -= d.prob;
+  }
+  return dist[dist.length - 1].action;
+}
+
+// Elige acción: muestreo si mix, si no la más probable.
+function chooseFromDist(dist, mix) {
+  if (mix) return sampleDist(dist);
+  return dist.slice().sort((a, b) => b.prob - a.prob)[0].action;
+}
+
+function describeMix(dist) {
+  return (
+    'Estrategia óptima (mixta): ' +
+    dist.map((d) => `${d.label} ${Math.round(d.prob * 100)}%`).join(' · ')
+  );
+}
+
+// Decisión binaria (cantar / no cantar) con frecuencia probTrue.
+function gate(probTrue, mix) {
+  return mix ? Math.random() < probTrue : probTrue >= 0.5;
+}
+
+// ---------- Recomendación principal ----------
+
 export function recommend(state, player, opts = {}) {
   const mix = opts.mix ?? false;
   const samples = opts.samples ?? 300;
@@ -304,44 +390,41 @@ function decideEnvidoResponse(state, player, { mix }) {
   reasoning.push(`Tu envido: ${ana.myPoints}. Rival promedio ≈ ${ana.mean.toFixed(1)}.`);
   reasoning.push(`P(ganar el envido) ≈ ${(p * 100).toFixed(0)}%${ana.iAmMano ? ' (sos mano, ganás los empates)' : ''}.`);
 
-  const options = [];
-  options.push({ action: { type: 'quiero' }, ev: evQuiero(p, Vq), label: `Quiero (${Vq})` });
-  options.push({ action: { type: 'noquiero' }, ev: -Vnq, label: `No quiero (-${Vnq})` });
-
-  // Subir (re-cantar) si me deja mejor.
-  for (const bet of envidoNextOptionsLocal(chain)) {
-    const newChain = chain.concat([bet]);
-    const Vq2 = envidoChainValue(newChain, state);
-    const Vnq2 = envidoNoQuieroValue(newChain, state);
-    // El rival acepta si p <= (Vq2+Vnq2)/(2 Vq2) (yo fuerte => rival se baja).
-    const oppFolds = p > (Vq2 + Vnq2) / (2 * Vq2);
-    const ev = oppFolds ? Vnq2 : evQuiero(p, Vq2);
-    options.push({
-      action: { type: 'call', bet },
-      ev,
-      label: `${labelLocal(bet)} (esperás ${ev.toFixed(2)})`,
-    });
+  const nexts = envidoNextOptionsLocal(chain);
+  let raise = null;
+  if (nexts.length) {
+    const bet = nexts.includes('realenvido') ? 'realenvido' : nexts[0];
+    const nc = chain.concat([bet]);
+    raise = { bet, Vq: envidoChainValue(nc, state), Vnq: envidoNoQuieroValue(nc, state) };
   }
+  const dist = responseDistribution(p, Vq, Vnq, raise);
+  reasoning.push(`Umbral para querer: ${(quieroThreshold(Vq, Vnq) * 100).toFixed(0)}%.`);
+  reasoning.push(describeMix(dist));
 
-  return pick(options, reasoning, { mix, p, kind: 'envido' });
+  const options = dist.map((d) => ({
+    action: d.action,
+    label: d.label,
+    ev: d.action.type === 'noquiero' ? -Vnq : evQuiero(p, Vq),
+  }));
+  return {
+    action: chooseFromDist(dist, mix),
+    reasoning,
+    winProb: null,
+    envido: ana,
+    distribution: dist,
+    options,
+  };
 }
 
 function decideTrucoResponse(state, player, { mix, samples }) {
   const reasoning = [];
-  const options = [];
 
-  // "El envido es primero": si estamos en la 1ª y no se resolvió, podemos
-  // contestar con envido cuando nos conviene.
+  // "El envido es primero": en la 1ª, con envido muy fuerte, conviene cantarlo.
   if (state.results.length === 0 && !state.envido.resolved) {
     const ana = envidoAnalysis(state, player);
-    if (ana.pWin > 0.6 && ana.myPoints >= 27) {
+    if (ana.pWin > 0.75 && ana.myPoints >= 28) {
       reasoning.push(`Tenés ${ana.myPoints} de envido y va primero: conviene cantarlo.`);
-      return {
-        action: { type: 'call', bet: 'envido' },
-        reasoning,
-        winProb: null,
-        envido: ana,
-      };
+      return { action: { type: 'call', bet: 'envido' }, reasoning, winProb: null, envido: ana };
     }
   }
 
@@ -349,103 +432,70 @@ function decideTrucoResponse(state, player, { mix, samples }) {
   const lastBet = state.truco.chain[state.truco.chain.length - 1];
   const Vq = TRUCO_QUIERO[lastBet];
   const Vnq = TRUCO_NOQUIERO[lastBet];
+  const next = { truco: 'retruco', retruco: 'valecuatro' }[lastBet];
+  const raise = next ? { bet: next, Vq: TRUCO_QUIERO[next], Vnq: TRUCO_NOQUIERO[next] } : null;
 
+  const dist = responseDistribution(p, Vq, Vnq, raise);
   reasoning.push(`P(ganar la mano) ≈ ${(p * 100).toFixed(0)}%.`);
   reasoning.push(`Umbral para querer el ${lastBet}: ${(quieroThreshold(Vq, Vnq) * 100).toFixed(0)}%.`);
+  reasoning.push(describeMix(dist));
 
-  options.push({ action: { type: 'quiero' }, ev: evQuiero(p, Vq), label: `Quiero (${Vq})` });
-  options.push({ action: { type: 'noquiero' }, ev: -Vnq, label: `No quiero (-${Vnq})` });
-
-  const next = { truco: 'retruco', retruco: 'valecuatro' }[lastBet];
-  if (next) {
-    const Vq2 = TRUCO_QUIERO[next];
-    const Vnq2 = TRUCO_NOQUIERO[next];
-    const oppFolds = p > (Vq2 + Vnq2) / (2 * Vq2);
-    const ev = oppFolds ? Vnq2 : evQuiero(p, Vq2);
-    options.push({ action: { type: 'call', bet: next }, ev, label: `${labelLocal(next)} (${ev.toFixed(2)})` });
-  }
-
-  return pick(options, reasoning, { mix, p, kind: 'truco', Vq, Vnq });
+  const options = dist.map((d) => ({
+    action: d.action,
+    label: d.label,
+    ev: d.action.type === 'noquiero' ? -Vnq : evQuiero(p, Vq),
+  }));
+  return { action: chooseFromDist(dist, mix), reasoning, winProb: p, distribution: dist, options };
 }
 
 function decidePlay(state, player, { mix, samples }) {
   const reasoning = [];
 
-  // 1) ¿Conviene cantar envido? (sólo en la 1ª, si nadie lo cantó)
+  // 1) Envido (sólo en la 1ª, si nadie cantó).
   if (state.results.length === 0 && !state.envido.resolved && state.envido.state === 'none') {
     const ana = envidoAnalysis(state, player);
-    const myScore = state.scores[player];
-    // EV de cantar envido (rival decide querer según su prob ≈ 1-p).
-    const Vq = 2;
-    const oppFolds = ana.pWin > 0.5; // si soy favorito, suele bajarse
-    const evCantar = oppFolds ? 1 : evQuiero(ana.pWin, Vq);
-    const wantEnvido = ana.pWin >= 0.58 || ana.myPoints >= 28;
-    const bluff = mix && Math.random() < 0.12 && ana.myPoints <= 22;
-    if (wantEnvido || bluff) {
-      reasoning.push(
-        `Envido: tenés ${ana.myPoints}, P(ganar) ≈ ${(ana.pWin * 100).toFixed(0)}%.` +
-          (bluff ? ' (bluff de envido)' : '')
-      );
-      const bet = ana.myPoints >= 31 ? 'realenvido' : 'envido';
-      return { action: { type: 'call', bet }, reasoning, envido: ana };
+    const pSing = singProbability(ana.pWin);
+    if (gate(pSing, mix)) {
+      const bet = ana.pWin >= 0.85 ? 'realenvido' : 'envido';
+      reasoning.push(`Envido: tenés ${ana.myPoints}, P(ganar) ≈ ${(ana.pWin * 100).toFixed(0)}%.`);
+      reasoning.push(`Cantar envido con frecuencia ${(pSing * 100).toFixed(0)}% (valor + algo de farol).`);
+      return { action: { type: 'call', bet }, reasoning, envido: ana, singProb: pSing };
+    }
+    if (pSing > 0.1) {
+      reasoning.push(`(Envido ${ana.myPoints}: se cantaría sólo ${(pSing * 100).toFixed(0)}% de las veces; ahora conviene callar.)`);
     }
   }
 
-  // 2) ¿Conviene cantar / subir el truco?
+  // 2) Truco (cantar o subir).
   const p = handWinProbability(state, player, samples);
   const trucoState = state.truco;
   const canCallTruco = trucoState.chain.length === 0;
   const canRaise = trucoState.accepted && trucoState.canRaiseBy === player;
-  const next = canRaise
+  const nextLevel = canRaise
     ? { truco: 'retruco', retruco: 'valecuatro' }[trucoState.chain[trucoState.chain.length - 1]]
     : null;
 
-  if (canCallTruco || (canRaise && next)) {
-    const bet = canCallTruco ? 'truco' : next;
-    const Vq = TRUCO_QUIERO[bet];
-    const Vnq = TRUCO_NOQUIERO[bet];
-    const curStake = state.handStake;
-    const oppFolds = p > (Vq + Vnq) / (2 * Vq); // rival débil se baja
-    const evCantar = oppFolds ? curStake + Vnq : evQuiero(p, Vq);
-    const evCallar = evQuiero(p, curStake);
-    const bluff = mix && Math.random() < 0.15 && p < 0.4 && state.hands[player].length <= 1;
-    if (evCantar > evCallar + 1e-9 || bluff) {
-      reasoning.push(
-        `P(ganar la mano) ≈ ${(p * 100).toFixed(0)}%. Cantar ${bet} rinde ${evCantar.toFixed(2)} vs ${evCallar.toFixed(2)} de no cantar.` +
-          (bluff ? ' (bluff de truco)' : '')
-      );
-      return { action: { type: 'call', bet }, reasoning, winProb: p };
+  if (canCallTruco || (canRaise && nextLevel)) {
+    const bet = canCallTruco ? 'truco' : nextLevel;
+    const pSing = singProbability(p);
+    if (gate(pSing, mix)) {
+      reasoning.push(`P(ganar la mano) ≈ ${(p * 100).toFixed(0)}%.`);
+      reasoning.push(`Cantar ${labelLocal(bet)} con frecuencia ${(pSing * 100).toFixed(0)}% (valor + farol acotado).`);
+      return { action: { type: 'call', bet }, reasoning, winProb: p, singProb: pSing };
+    }
+    if (pSing > 0.1) {
+      reasoning.push(`(${labelLocal(bet)}: se cantaría ${(pSing * 100).toFixed(0)}% de las veces; ahora conviene jugar.)`);
     }
   }
 
   // 3) Jugar la mejor carta.
   const { card, winProb, scored } = chooseCard(state, player, Math.max(80, samples / 2));
-  reasoning.push(
-    `Mejor carta: ${card.rank} de ${card.suit} (P(ganar) ≈ ${(winProb * 100).toFixed(0)}%).`
-  );
+  reasoning.push(`Mejor carta: ${card.rank} de ${card.suit} (P(ganar) ≈ ${(winProb * 100).toFixed(0)}%).`);
   reasoning.push(
     'Opciones: ' +
-      scored
-        .map((s) => `${s.card.rank}${s.card.suit[0]}=${(s.p * 100).toFixed(0)}%`)
-        .join(', ')
+      scored.map((s) => `${s.card.rank}${s.card.suit[0]}=${(s.p * 100).toFixed(0)}%`).join(', ')
   );
   return { action: { type: 'play', card }, reasoning, winProb };
-}
-
-// Elige la opción de mayor EV; con mix, agrega bluff/indiferencia.
-function pick(options, reasoning, ctx) {
-  options.sort((a, b) => b.ev - a.ev);
-  reasoning.push('EV: ' + options.map((o) => `${o.label}=${o.ev.toFixed(2)}`).join(' | '));
-  let chosen = options[0];
-
-  if (ctx.mix) {
-    // Si las dos mejores están parejas, randomizar (estrategia mixta).
-    if (options.length >= 2 && Math.abs(options[0].ev - options[1].ev) < 0.2) {
-      chosen = Math.random() < 0.5 ? options[0] : options[1];
-      reasoning.push('Opciones parejas: se juega mixto.');
-    }
-  }
-  return { action: chosen.action, reasoning, winProb: ctx.p, options };
 }
 
 // helpers locales (duplican lo del engine para no exponer internos)

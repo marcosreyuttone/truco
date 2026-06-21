@@ -15,7 +15,13 @@ import {
   envidoChainValue,
   envidoNoQuieroValue,
 } from '../src/engine.js';
-import { recommend, envidoAnalysis, handWinProbability } from '../src/ai.js';
+import {
+  recommend,
+  envidoAnalysis,
+  handWinProbability,
+  responseDistribution,
+  singProbability,
+} from '../src/ai.js';
 
 let passed = 0;
 let failed = 0;
@@ -176,6 +182,34 @@ const playState = createHandState({
 });
 const rPlay = recommend(playState, 0, { mix: false, samples: 100 });
 ok(rPlay.action && ['play', 'call'].includes(rPlay.action.type), `en juego devuelve play/call (${rPlay.action && rPlay.action.type})`);
+
+// --- Estrategias mixtas (no explotable) ---
+const prob = (dist, type) => {
+  const d = dist.find((x) => x.action.type === type);
+  return d ? d.prob : 0;
+};
+const sumProb = (dist) => dist.reduce((s, d) => s + d.prob, 0);
+
+// En el umbral del truco (p ≈ 0.25) la respuesta debe ser MIXTA: ni siempre
+// quiero ni siempre no quiero (si no, sería explotable).
+const atThreshold = responseDistribution(0.25, 2, 1, { bet: 'retruco', Vq: 3, Vnq: 2 });
+ok(prob(atThreshold, 'quiero') > 0.05 && prob(atThreshold, 'quiero') < 0.95, 'en el umbral mezcla quiero/no quiero');
+ok(Math.abs(sumProb(atThreshold) - 1) < 1e-9, 'la distribución suma 1');
+
+// Mano fuerte (p alto): casi nunca se baja.
+const strongResp = responseDistribution(0.9, 2, 1, { bet: 'retruco', Vq: 3, Vnq: 2 });
+ok(prob(strongResp, 'noquiero') < 0.1, 'con mano fuerte casi no se baja');
+
+// Mano floja: mayormente no quiero, pero con algo de farol acotado (no 0, no mucho).
+const weakResp = responseDistribution(0.02, 2, 1, { bet: 'retruco', Vq: 3, Vnq: 2 });
+const bluffFreq = prob(weakResp, 'call');
+ok(bluffFreq > 0 && bluffFreq < 0.25, `el farol con mano floja está acotado (${bluffFreq.toFixed(2)})`);
+ok(prob(weakResp, 'noquiero') > 0.7, 'con mano floja se baja la mayoría de las veces');
+
+// singProbability: monótona y acotada.
+ok(singProbability(0.95) > 0.9, 'con mano fuerte se canta casi siempre');
+ok(singProbability(0.4) < 0.2, 'con mano media casi no se canta');
+ok(singProbability(0.0) > 0 && singProbability(0.0) <= 0.4, 'farol de canto acotado con mano nula');
 
 console.log(`\n${passed} pruebas OK, ${failed} fallaron.`);
 process.exit(failed > 0 ? 1 : 0);
