@@ -484,7 +484,7 @@ function rolloutEV(state, player, firstAction, R) {
 // estable (menos ruido Monte Carlo), a costa de tiempo. En la web (samples=220)
 // da ~110; en simulaciones/tests (samples bajos) baja para no ser lento.
 function rolloutCount(samples) {
-  return Math.max(10, Math.min(120, Math.round(samples / 2)));
+  return Math.max(10, Math.min(150, Math.round(samples / 2)));
 }
 
 // ---------- Recomendación principal ----------

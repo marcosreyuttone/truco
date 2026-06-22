@@ -80,7 +80,7 @@ function loop() {
   if (actor === 1) {
     busy = true;
     setTimeout(() => {
-      const rec = recommend(state, 1, { mix: true, samples: 220 });
+      const rec = recommend(state, 1, { mix: true, samples: 300 });
       const action = rec.action || legalActions(state).find((a) => a.player === 1);
       showMachineReasoning(rec, action);
       state = applyAction(state, action);
