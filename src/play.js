@@ -10,6 +10,7 @@ import { recommend } from './ai.js';
 import { cardEl, clear } from './render.js';
 import { cardLabel } from './cards.js';
 import { SHOW_THINKING } from './config.js';
+import { pushGame, playerId } from './remote-history.js';
 
 let state = null;
 let busy = false;
@@ -314,17 +315,28 @@ function saveHistory(arr) {
 function recordGameOnce() {
   if (gameSaved || !state || state.phase !== 'game-over') return;
   gameSaved = true;
-  const hist = loadHistory();
-  hist.push({
+  const record = {
     ts: Date.now(),
     me: state.scores[0],
     ai: state.scores[1],
     won: state.scores[0] > state.scores[1],
     log: state.log.slice(),
-  });
+  };
+  const hist = loadHistory();
+  hist.push(record);
   if (hist.length > 200) hist.splice(0, hist.length - 200);
   saveHistory(hist);
   renderHistory();
+
+  // Copia central (todos los jugadores) en Supabase. No bloquea ni rompe.
+  pushGame({
+    player_id: playerId(),
+    score_me: record.me,
+    score_ai: record.ai,
+    won: record.won,
+    log: record.log,
+    app: 'truco-web',
+  });
 }
 
 function renderHistory() {
