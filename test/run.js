@@ -248,5 +248,44 @@ const rateGarbage = trucoCantaRate(garbage, 16);
 ok(rateMonster > rateGarbage, `canta más truco con manaza que con basura (${(rateMonster * 100).toFixed(0)}% vs ${(rateGarbage * 100).toFixed(0)}%)`);
 ok(rateGarbage < 0.5, `con mano floja no canta truco de movida casi nunca (${(rateGarbage * 100).toFixed(0)}%)`);
 
+// --- Envido: responder asumiendo rival fuerte (no querer con 6) ---
+function envidoRespState(machineHand, scores = [0, 0], caller = 0) {
+  const s = createHandState({
+    target: 30, scores, dealer: 0, // dealer 0 => máquina (J1) es mano
+    hands: [[{ rank: 7, suit: 'oro' }, { rank: 6, suit: 'oro' }, { rank: 5, suit: 'basto' }], machineHand],
+  });
+  s.phase = 'envido-response';
+  s.responder = 1;
+  s.envido = { chain: ['envido'], state: 'pending', caller, resolved: false };
+  return s;
+}
+const seis = [{ rank: 6, suit: 'oro' }, { rank: 4, suit: 'basto' }, { rank: 11, suit: 'copa' }]; // envido 6
+const r6 = recommend(envidoRespState(seis), 1, { mix: false, samples: 30 });
+ok(r6.action.type === 'noquiero', `con 6 de envido (rival cantó) no quiere (${r6.action.type})`);
+
+// --- No bajarse si bajarse pierde la partida ---
+const rFoldLoses = recommend(envidoRespState(seis, [29, 0], 0), 1, { mix: false, samples: 30 });
+ok(rFoldLoses.action.type !== 'noquiero', `si no querer pierde la partida, no se baja (${rFoldLoses.action.type})`);
+
+// --- Ventana del envido: si ya jugaste, no podés cantar envido al truco ---
+function trucoRespAfterPlay(responderPlayed) {
+  const s = createHandState({
+    target: 30, scores: [0, 0], dealer: 1,
+    hands: [[{ rank: 1, suit: 'espada' }, { rank: 3, suit: 'oro' }, { rank: 5, suit: 'copa' }],
+            [{ rank: 7, suit: 'espada' }, { rank: 2, suit: 'oro' }, { rank: 4, suit: 'copa' }]],
+  });
+  // J0 es mano; arma una baza 1 con J0 ya habiendo jugado si corresponde.
+  if (responderPlayed) {
+    s.tricks = [{ plays: [{ player: 0, card: { rank: 5, suit: 'copa' } }] }];
+    s.hands[0] = [{ rank: 1, suit: 'espada' }, { rank: 3, suit: 'oro' }];
+  }
+  s.phase = 'truco-response';
+  s.responder = 0;
+  s.truco = { chain: ['truco'], accepted: false, caller: 1, canRaiseBy: null };
+  return legalActions(s).filter((a) => a.type === 'call').map((a) => a.bet);
+}
+ok(!trucoRespAfterPlay(true).includes('envido'), 'si ya jugaste, no se puede envido primero');
+ok(trucoRespAfterPlay(false).includes('envido'), 'si no jugaste, sí se puede envido primero');
+
 console.log(`\n${passed} pruebas OK, ${failed} fallaron.`);
 process.exit(failed > 0 ? 1 : 0);

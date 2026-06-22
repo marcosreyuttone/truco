@@ -227,7 +227,7 @@ function combinations(arr, k) {
   return res;
 }
 
-export function envidoAnalysis(state, me) {
+export function envidoAnalysis(state, me, opts = {}) {
   const opp = other(me);
   const myFull = fullHand(state, me);
   const myPoints = envidoPoints(myFull);
@@ -240,23 +240,33 @@ export function envidoAnalysis(state, me) {
   const combos =
     oppHidden <= 0 ? [[]] : combinations(unknownDeck, oppHidden);
 
+  // Si el rival CANTÓ el envido, su tanto está sesgado a ser alto: ponderamos
+  // cada mano posible por la chance de que la cantara (más peso a tantos altos,
+  // con un piso para los faroles). Así no se quiere con tantos marginales.
+  const weight = opts.callerStrong
+    ? (pts) => Math.max(0.12, Math.min(1, (pts - 17) / 10))
+    : () => 1;
+
   let total = 0;
-  let wins = 0;
-  let ties = 0;
   let sum = 0;
+  let wTotal = 0;
+  let wWins = 0;
+  let wTies = 0;
   const histogram = {};
   for (const combo of combos) {
     const oppFull = oppPlayed.concat(combo);
     const pts = envidoPoints(oppFull);
+    const w = weight(pts);
     total++;
     sum += pts;
+    wTotal += w;
     histogram[pts] = (histogram[pts] || 0) + 1;
-    if (myPoints > pts) wins++;
-    else if (myPoints === pts) ties++;
+    if (myPoints > pts) wWins += w;
+    else if (myPoints === pts) wTies += w;
   }
   const iAmMano = state.mano === me;
   // En empate gana el mano.
-  const pWin = total === 0 ? 0.5 : (wins + (iAmMano ? ties : 0)) / total;
+  const pWin = wTotal === 0 ? 0.5 : (wWins + (iAmMano ? wTies : 0)) / wTotal;
   return {
     myPoints,
     pWin,
@@ -296,6 +306,15 @@ function normalizeDist(dist) {
   const total = dist.reduce((s, d) => s + d.prob, 0) || 1;
   for (const d of dist) d.prob /= total;
   return dist.filter((d) => d.prob > 1e-6);
+}
+
+// Si bajarse (no quiero) entrega la partida al rival, no tiene sentido bajarse:
+// se quita esa opción y se juega (quiero/subir), que al menos da chance.
+function forcePlayIfFoldLoses(dist, state, caller, Vnq) {
+  if (state.scores[caller] + Vnq < state.target) return dist;
+  const kept = dist.filter((d) => d.action.type !== 'noquiero');
+  const pool = kept.length ? kept : [{ action: { type: 'quiero' }, prob: 1, label: 'Quiero' }];
+  return normalizeDist(pool);
 }
 
 // Distribución mixta para responder una apuesta (no quiero / quiero / subir).
@@ -474,24 +493,32 @@ export function recommend(state, player, opts = {}) {
 }
 
 function decideEnvidoResponse(state, player, { mix }) {
-  const ana = envidoAnalysis(state, player);
+  // El rival cantó: asumimos que su tanto está sesgado a ser alto.
+  const ana = envidoAnalysis(state, player, { callerStrong: true });
   const chain = state.envido.chain;
   const Vq = envidoChainValue(chain, state);
   const Vnq = envidoNoQuieroValue(chain, state);
   const p = ana.pWin;
 
   const reasoning = [];
-  reasoning.push(`Tu envido: ${ana.myPoints}. Rival promedio ≈ ${ana.mean.toFixed(1)}.`);
-  reasoning.push(`P(ganar el envido) ≈ ${(p * 100).toFixed(0)}%${ana.iAmMano ? ' (sos mano, ganás los empates)' : ''}.`);
+  reasoning.push(`Tu envido: ${ana.myPoints}. P(ganar) ≈ ${(p * 100).toFixed(0)}% (asumiendo que el rival cantó con buen tanto)${ana.iAmMano ? ', sos mano' : ''}.`);
 
   const nexts = envidoNextOptionsLocal(chain);
   let raise = null;
   if (nexts.length) {
-    const bet = nexts.includes('realenvido') ? 'realenvido' : nexts[0];
+    // Con tanto casi seguro, escalar a la falta; si no, al real envido.
+    const bet =
+      p > 0.92 && nexts.includes('faltaenvido')
+        ? 'faltaenvido'
+        : nexts.includes('realenvido')
+        ? 'realenvido'
+        : nexts[0];
     const nc = chain.concat([bet]);
     raise = { bet, Vq: envidoChainValue(nc, state), Vnq: envidoNoQuieroValue(nc, state) };
   }
-  const dist = responseDistribution(p, Vq, Vnq, raise);
+  let dist = responseDistribution(p, Vq, Vnq, raise);
+  // Si bajarse entrega la partida, no se baja.
+  dist = forcePlayIfFoldLoses(dist, state, state.envido.caller, Vnq);
   reasoning.push(`Umbral para querer: ${(quieroThreshold(Vq, Vnq) * 100).toFixed(0)}%.`);
   reasoning.push(describeMix(dist));
 
@@ -513,8 +540,9 @@ function decideEnvidoResponse(state, player, { mix }) {
 function decideTrucoResponse(state, player, { mix, samples }) {
   const reasoning = [];
 
-  // "El envido es primero": en la 1ª, con envido muy fuerte, conviene cantarlo.
-  if (state.results.length === 0 && !state.envido.resolved) {
+  // "El envido es primero": en la 1ª, sin haber jugado carta todavía y con
+  // envido muy fuerte, conviene cantarlo en respuesta al truco.
+  if (state.results.length === 0 && !state.envido.resolved && playedBy(state, player).length === 0) {
     const ana = envidoAnalysis(state, player);
     if (ana.pWin > 0.75 && ana.myPoints >= 28) {
       reasoning.push(`Tenés ${ana.myPoints} de envido y va primero: conviene cantarlo.`);
@@ -551,11 +579,13 @@ function decideTrucoResponse(state, player, { mix, samples }) {
     no -= bluffRaise;
   }
 
-  const dist = [];
+  let dist = [];
   if (no > 1e-6) dist.push({ action: { type: 'noquiero' }, prob: no, label: 'No quiero' });
   if (quiero > 1e-6) dist.push({ action: { type: 'quiero' }, prob: quiero, label: 'Quiero' });
   if (raiseProb > 1e-6) dist.push({ action: raiseAction, prob: raiseProb, label: labelLocal(next) });
   normalizeDist(dist);
+  // Si bajarse entrega la partida, no se baja.
+  dist = forcePlayIfFoldLoses(dist, state, state.truco.caller, Vnq);
 
   reasoning.push(`P(ganar la mano) ≈ ${(p * 100).toFixed(0)}%. Umbral para querer: ${(t * 100).toFixed(0)}%.`);
   if (evRaise !== null) {

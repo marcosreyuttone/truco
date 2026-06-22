@@ -115,6 +115,11 @@ function completedTricks(state) {
   return state.results.length;
 }
 
+// ¿El jugador ya tiró una carta en la primera baza? (cierra su ventana de envido)
+function hasPlayedFirstTrick(state, player) {
+  return state.tricks.length > 0 && state.tricks[0].plays.some((pl) => pl.player === player);
+}
+
 function pushLog(state, msg) {
   state.log.push(msg);
 }
@@ -142,9 +147,14 @@ export function legalActions(state) {
     actions.push({ type: 'noquiero' });
     const next = TRUCO_NEXT[state.truco.chain[state.truco.chain.length - 1] || ''];
     if (next) actions.push({ type: 'call', bet: next });
-    // "El envido es primero": en la primera baza se puede contestar el truco
-    // cantando envido si todavía no se jugó.
-    if (completedTricks(state) === 0 && !state.envido.resolved) {
+    // "El envido es primero": se puede contestar el truco cantando envido sólo
+    // si es la 1ª baza, no se resolvió, y el que responde NO jugó carta todavía
+    // (si ya tiró, perdió su chance de envido).
+    if (
+      completedTricks(state) === 0 &&
+      !state.envido.resolved &&
+      !hasPlayedFirstTrick(state, p)
+    ) {
       actions.push({ type: 'call', bet: 'envido' });
       actions.push({ type: 'call', bet: 'realenvido' });
       actions.push({ type: 'call', bet: 'faltaenvido' });
@@ -157,8 +167,13 @@ export function legalActions(state) {
   for (const card of state.hands[p]) {
     actions.push({ type: 'play', card });
   }
-  // Envido: sólo en la primera baza, si no se resolvió aún.
-  if (completedTricks(state) === 0 && !state.envido.resolved && state.envido.state === 'none') {
+  // Envido: sólo en la primera baza, si no se resolvió y sin haber jugado carta.
+  if (
+    completedTricks(state) === 0 &&
+    !state.envido.resolved &&
+    state.envido.state === 'none' &&
+    !hasPlayedFirstTrick(state, p)
+  ) {
     actions.push({ type: 'call', bet: 'envido' });
     actions.push({ type: 'call', bet: 'realenvido' });
     actions.push({ type: 'call', bet: 'faltaenvido' });
