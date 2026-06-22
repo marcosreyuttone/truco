@@ -640,9 +640,11 @@ function decidePlay(state, player, { mix, samples }) {
 function envidoNextOptionsLocal(chain) {
   if (chain.includes('faltaenvido')) return [];
   const opts = [];
+  const hasReal = chain.includes('realenvido');
   const c = chain.filter((b) => b === 'envido').length;
-  if (c < 2) opts.push('envido');
-  if (!chain.includes('realenvido')) opts.push('realenvido');
+  // Misma regla que el engine: envido → (envido) → real envido → falta envido.
+  if (!hasReal && c < 2) opts.push('envido');
+  if (!hasReal) opts.push('realenvido');
   opts.push('faltaenvido');
   return opts;
 }

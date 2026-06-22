@@ -52,9 +52,12 @@ function envidoNoQuieroValue(chain, state) {
 function envidoNextOptions(chain) {
   if (chain.includes('faltaenvido')) return [];
   const opts = [];
+  const hasReal = chain.includes('realenvido');
   const envidoCount = chain.filter((b) => b === 'envido').length;
-  if (envidoCount < 2) opts.push('envido');
-  if (!chain.includes('realenvido')) opts.push('realenvido');
+  // "Envido" sólo se puede (re)cantar si todavía no hubo real envido y hay
+  // menos de dos: la secuencia válida es envido → (envido) → real → falta.
+  if (!hasReal && envidoCount < 2) opts.push('envido');
+  if (!hasReal) opts.push('realenvido');
   opts.push('faltaenvido');
   return opts;
 }

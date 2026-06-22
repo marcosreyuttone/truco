@@ -73,6 +73,29 @@ eq(envidoChainValue(['faltaenvido'], stub), 30, 'falta al inicio = 30');
 eq(envidoNoQuieroValue(['envido'], stub), 1, 'no quiero envido = 1');
 eq(envidoNoQuieroValue(['envido', 'realenvido'], stub), 2, 'no quiero tras envido = 2');
 
+// Escalada del envido (regla: envido → (envido) → real envido → falta envido).
+function envidoRaises(chain) {
+  const s = createHandState({
+    target: 30, scores: [0, 0], dealer: 1,
+    hands: [
+      [{ rank: 7, suit: 'oro' }, { rank: 6, suit: 'oro' }, { rank: 4, suit: 'copa' }],
+      [{ rank: 5, suit: 'basto' }, { rank: 4, suit: 'basto' }, { rank: 3, suit: 'copa' }],
+    ],
+  });
+  s.phase = 'envido-response';
+  s.responder = 0;
+  s.envido = { chain, state: 'pending', caller: 1, resolved: false };
+  return legalActions(s).filter((a) => a.type === 'call').map((a) => a.bet);
+}
+ok(!envidoRaises(['realenvido']).includes('envido'), 'tras real envido NO se puede cantar envido');
+ok(envidoRaises(['realenvido']).includes('faltaenvido'), 'tras real envido sí se puede falta');
+ok(!envidoRaises(['realenvido']).includes('realenvido'), 'no se repite real envido');
+ok(envidoRaises(['envido']).includes('envido'), 'tras un envido se puede otro envido');
+ok(envidoRaises(['envido']).includes('realenvido'), 'tras envido se puede real envido');
+ok(!envidoRaises(['envido', 'envido']).includes('envido'), 'no hay tres envidos');
+ok(envidoRaises(['envido', 'envido']).includes('realenvido'), 'tras envido-envido se puede real');
+eq(envidoRaises(['faltaenvido']).length, 0, 'tras falta envido no hay más subidas');
+
 // --- Partida completa IA vs IA (humo) ---
 let g = newGame();
 let safety = 0;
