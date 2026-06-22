@@ -287,5 +287,15 @@ function trucoRespAfterPlay(responderPlayed) {
 ok(!trucoRespAfterPlay(true).includes('envido'), 'si ya jugaste, no se puede envido primero');
 ok(trucoRespAfterPlay(false).includes('envido'), 'si no jugaste, sí se puede envido primero');
 
+// --- A 1 punto del triunfo, canta FALTA envido (no envido común) ---
+const matchPoint = createHandState({
+  target: 30, scores: [29, 0], dealer: 1, // J0 a 1 del triunfo, es mano
+  hands: [[{ rank: 7, suit: 'oro' }, { rank: 6, suit: 'oro' }, { rank: 4, suit: 'copa' }], // envido 33
+          [{ rank: 5, suit: 'basto' }, { rank: 4, suit: 'basto' }, { rank: 3, suit: 'copa' }]],
+});
+const rMatch = recommend(matchPoint, 0, { mix: false, samples: 40 });
+ok(rMatch.action.type === 'call' && rMatch.action.bet === 'faltaenvido',
+   `a 1 del triunfo canta falta envido (${rMatch.action.type} ${rMatch.action.bet || ''})`);
+
 console.log(`\n${passed} pruebas OK, ${failed} fallaron.`);
 process.exit(failed > 0 ? 1 : 0);

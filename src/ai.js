@@ -506,9 +506,11 @@ function decideEnvidoResponse(state, player, { mix }) {
   const nexts = envidoNextOptionsLocal(chain);
   let raise = null;
   if (nexts.length) {
-    // Con tanto casi seguro, escalar a la falta; si no, al real envido.
+    // A 1 del triunfo, o con tanto casi seguro, escalar a la falta (arriesga
+    // menos y cierra la partida); si no, al real envido.
+    const needed = state.target - state.scores[player];
     const bet =
-      p > 0.92 && nexts.includes('faltaenvido')
+      (needed === 1 || p > 0.92) && nexts.includes('faltaenvido')
         ? 'faltaenvido'
         : nexts.includes('realenvido')
         ? 'realenvido'
@@ -629,7 +631,10 @@ function decidePlay(state, player, { mix, samples }) {
   // 1) Envido (sólo en la 1ª, si nadie cantó) — por EV, igual que el truco.
   if (state.results.length === 0 && !state.envido.resolved && state.envido.state === 'none') {
     const ana = envidoAnalysis(state, player);
-    const bet = ana.pWin >= 0.85 ? 'realenvido' : 'envido';
+    // A 1 punto del triunfo, la falta envido arriesga 1 (no 2) y alcanza para
+    // ganar la partida: conviene cantar falta en vez de envido.
+    const needed = state.target - state.scores[player];
+    const bet = needed === 1 ? 'faltaenvido' : ana.pWin >= 0.85 ? 'realenvido' : 'envido';
     const { prob, evCanta, evWait: w } = cantaProbFor(bet, ana.pWin);
     reasoning.push(`Envido: tenés ${ana.myPoints}, P(ganar) ≈ ${(ana.pWin * 100).toFixed(0)}%.`);
     reasoning.push(`EV cantar ${labelLocal(bet)} = ${evCanta.toFixed(2)} vs esperar = ${w.toFixed(2)} → cantar ${(prob * 100).toFixed(0)}%.`);
