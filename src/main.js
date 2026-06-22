@@ -1,6 +1,7 @@
 // Punto de entrada: pestañas + inicialización de cada modo.
 import { initPlay } from './play.js';
 import { initSolver } from './solver-ui.js';
+import { SHOW_THINKING } from './config.js';
 
 function setupTabs() {
   const tabs = document.querySelectorAll('.tab');
@@ -16,4 +17,11 @@ function setupTabs() {
 
 setupTabs();
 initPlay();
-initSolver();
+
+if (SHOW_THINKING) {
+  initSolver();
+} else {
+  // Ocultar la pestaña Solver (también revela la estrategia).
+  const solverTab = document.querySelector('.tab[data-view="solver"]');
+  if (solverTab) solverTab.style.display = 'none';
+}

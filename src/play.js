@@ -9,6 +9,7 @@ import {
 import { recommend } from './ai.js';
 import { cardEl, clear } from './render.js';
 import { cardLabel } from './cards.js';
+import { SHOW_THINKING } from './config.js';
 
 let state = null;
 let busy = false;
@@ -25,7 +26,13 @@ export function initPlay() {
       loop();
     }
   });
-  $('btn-hint').addEventListener('click', showHint);
+  if (SHOW_THINKING) {
+    $('btn-hint').addEventListener('click', showHint);
+  } else {
+    // Ocultar el "cómo piensa": panel de razonamiento y botón de sugerencia.
+    $('play-reasoning').style.display = 'none';
+    $('btn-hint').style.display = 'none';
+  }
   startGame();
 }
 
@@ -269,6 +276,7 @@ function reasoningList(lines) {
 }
 
 function setReasoning(html) {
+  if (!SHOW_THINKING) return;
   $('play-reasoning').innerHTML = html;
 }
 
