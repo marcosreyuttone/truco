@@ -29,10 +29,11 @@ ser explotable (estrategias mixtas).
   - Querer una apuesta de valor `Vq` (no quiero paga `Vnq`) conviene si
     `p ≥ (Vq − Vnq) / (2·Vq)`. Para el truco eso da 25%, retruco ~17%, vale
     cuatro ~12,5% (cuanto más hay en juego, más liviano se quiere).
-  - **Cantar ahora vs esperar** se decide por valor esperado real: se simulan
-    *rollouts* Monte Carlo de la mano hasta el final y se compara el EV de
-    cantar ya contra el de jugar y conservar la opción de cantar después (con el
-    rival respondiendo según su propia mano). Así canta cuando es fuerte, espera
+  - **Cantar ahora vs esperar** (mismo criterio para **envido, truco y
+    recantos**) se decide por valor esperado real: se simulan *rollouts* Monte
+    Carlo de la mano hasta el final y se compara el EV de cantar/subir ya contra
+    el de jugar y conservar la opción de cantar después (con el rival
+    respondiendo según su propia mano). Así canta cuando es fuerte, espera
     cuando esperar rinde más, y nunca por una penalización arbitraria.
   - Con manos parejas o como farol acotado se randomiza (estrategia mixta).
 

@@ -20,7 +20,6 @@ import {
   envidoAnalysis,
   handWinProbability,
   responseDistribution,
-  singProbability,
 } from '../src/ai.js';
 
 let passed = 0;
@@ -206,12 +205,7 @@ const bluffFreq = prob(weakResp, 'call');
 ok(bluffFreq > 0 && bluffFreq < 0.25, `el farol con mano floja está acotado (${bluffFreq.toFixed(2)})`);
 ok(prob(weakResp, 'noquiero') > 0.7, 'con mano floja se baja la mayoría de las veces');
 
-// singProbability (envido): monótona y acotada.
-ok(singProbability(0.95) > 0.9, 'con buen tanto se canta casi siempre');
-ok(singProbability(0.4) < 0.2, 'con tanto medio casi no se canta');
-ok(singProbability(0.0) > 0 && singProbability(0.0) <= 0.4, 'farol de envido acotado');
-
-// Timing del truco por EV(cantar vs esperar): comportamiento estadístico.
+// Timing por EV(cantar vs esperar): comportamiento estadístico.
 // (envido ya resuelto para aislar la decisión de truco)
 function trucoCantaRate(hand, n) {
   let canta = 0;
