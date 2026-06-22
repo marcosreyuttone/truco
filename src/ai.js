@@ -73,6 +73,36 @@ function solveEndgame(handsLeft, results, lead, turn, mano) {
   return fallback;
 }
 
+// Mejor carta a jugar resolviendo el final de cartas EXACTO (minimax).
+// Usa que en el rollout las cartas de ambos están sampleadas (info perfecta),
+// igual criterio que handWinProbability. Devuelve una carta que mantiene la
+// mano ganable (si se puede); si no, una cualquiera (perdés igual).
+function bestEndgameCard(handsLeft, results, lead, turn, mano) {
+  const cards = handsLeft[turn];
+  let fallback = cards[0];
+  for (const c of cards) {
+    const nh = [handsLeft[0].slice(), handsLeft[1].slice()];
+    nh[turn] = nh[turn].filter((x) => !(x.rank === c.rank && x.suit === c.suit));
+    let outcome;
+    if (!lead) {
+      outcome = solveEndgame(nh, results, { player: turn, card: c }, other(turn), mano);
+    } else {
+      const cmp = compareCards(lead.card, c);
+      const res = cmp > 0 ? lead.player : cmp < 0 ? turn : 'parda';
+      const nresults = results.concat([res]);
+      const hw = handWinner(nresults, mano);
+      if (hw !== null) outcome = hw;
+      else {
+        const leader = res === 'parda' ? mano : res;
+        outcome = solveEndgame(nh, nresults, null, leader, mano);
+      }
+    }
+    if (outcome === turn) return c;
+    fallback = c;
+  }
+  return fallback;
+}
+
 // Cartas ya jugadas por un jugador.
 function playedBy(state, p) {
   const out = [];
@@ -395,27 +425,11 @@ function gate(probTrue, mix) {
 // trampa) y ambos juegan con una política rápida. Esperar incluye, naturalmente,
 // la opción de cantar más adelante (cuando haya más info o el rival reaccione).
 
-const FAST_WIN = 6; // muestras MC de la política rápida dentro del rollout
+const FAST_WIN = 10; // muestras MC de la política rápida dentro del rollout
 
 // Tanto de envido rápido (sin enumerar): puntos de la mano completa.
 function envidoQuick(state, player) {
   return envidoPoints(fullHand(state, player));
-}
-
-// Elección de carta rápida (heurística, sin búsqueda): si respondo, la menor
-// que gane (si no, la más baja); si lidero, la más alta.
-function fastCard(state, player) {
-  const hand = state.hands[player];
-  const trick = state.tricks[state.tricks.length - 1];
-  if (trick.plays.length === 1 && trick.plays[0].player !== player) {
-    const oppCard = trick.plays[0].card;
-    const winners = hand
-      .filter((c) => compareCards(c, oppCard) > 0)
-      .sort((a, b) => trucoPower(a) - trucoPower(b));
-    if (winners.length) return winners[0];
-    return hand.slice().sort((a, b) => trucoPower(a) - trucoPower(b))[0];
-  }
-  return hand.slice().sort((a, b) => trucoPower(b) - trucoPower(a))[0];
 }
 
 // Política rápida para usar DENTRO de los rollouts (no hace más rollouts).
@@ -453,7 +467,13 @@ function fastPolicy(state, player) {
     const pv = clamp01((p - 0.7) / 0.2) * 0.7 + (p < 0.12 ? 0.1 : 0);
     if (Math.random() < pv) return { type: 'call', bet: canCall ? 'truco' : nextLevel };
   }
-  return { type: 'play', card: fastCard(state, player) };
+  // Carta: minimax exacto del final (más fuerte que una heurística).
+  const trick = state.tricks[state.tricks.length - 1];
+  const lead =
+    trick.plays.length === 1
+      ? { player: trick.plays[0].player, card: trick.plays[0].card }
+      : null;
+  return { type: 'play', card: bestEndgameCard(state.hands, state.results, lead, player, state.mano) };
 }
 
 // Valor esperado (en puntos netos de la mano) de tomar `firstAction` ahora y
