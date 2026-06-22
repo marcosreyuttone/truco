@@ -448,6 +448,13 @@ function rolloutEV(state, player, firstAction, R) {
   return sum / R;
 }
 
+// Cantidad de rollouts según el presupuesto de muestras. Más alto = EV más
+// estable (menos ruido Monte Carlo), a costa de tiempo. En la web (samples=220)
+// da ~110; en simulaciones/tests (samples bajos) baja para no ser lento.
+function rolloutCount(samples) {
+  return Math.max(10, Math.min(120, Math.round(samples / 2)));
+}
+
 // ---------- Recomendación principal ----------
 
 export function recommend(state, player, opts = {}) {
@@ -534,7 +541,7 @@ function decideTrucoResponse(state, player, { mix, samples }) {
   let evRaise = null;
   if (next) {
     raiseAction = { type: 'call', bet: next };
-    const R = Math.max(8, Math.min(40, Math.round(samples / 3)));
+    const R = rolloutCount(samples);
     evRaise = rolloutEV(state, player, raiseAction, R);
     const valueRaise = ramp(evRaise - evQ, 0.02, 0.5) * quiero; // sube si rinde más que quiero
     const t2 = quieroThreshold(TRUCO_QUIERO[next], TRUCO_NOQUIERO[next]);
@@ -566,7 +573,7 @@ function decideTrucoResponse(state, player, { mix, samples }) {
 
 function decidePlay(state, player, { mix, samples }) {
   const reasoning = [];
-  const R = Math.max(8, Math.min(40, Math.round(samples / 3)));
+  const R = rolloutCount(samples);
   const choice = chooseCard(state, player, Math.max(40, Math.round(samples / 2)));
   const bestCard = choice.card;
 
