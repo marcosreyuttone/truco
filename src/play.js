@@ -14,6 +14,9 @@ import { SHOW_THINKING } from './config.js';
 let state = null;
 let busy = false;
 let suggested = null; // carta sugerida por el botón de ayuda
+let gameSaved = false; // para guardar cada partida una sola vez
+
+const HISTORY_KEY = 'truco-history-v1';
 
 const $ = (id) => document.getElementById(id);
 
@@ -33,6 +36,11 @@ export function initPlay() {
     $('play-reasoning').style.display = 'none';
     $('btn-hint').style.display = 'none';
   }
+  $('btn-clear-history').addEventListener('click', () => {
+    saveHistory([]);
+    renderHistory();
+  });
+  renderHistory();
   startGame();
 }
 
@@ -40,6 +48,7 @@ function startGame() {
   state = newGame();
   busy = false;
   suggested = null;
+  gameSaved = false;
   setReasoning('<div class="muted">Empezó la partida. Sos "mano" en la primera.</div>');
   loop();
 }
@@ -47,7 +56,11 @@ function startGame() {
 // Avanza el juego: si le toca a la máquina, juega sola; si no, espera al humano.
 function loop() {
   render();
-  if (!state || state.phase === 'game-over') return;
+  if (!state) return;
+  if (state.phase === 'game-over') {
+    recordGameOnce();
+    return;
+  }
 
   if (state.phase === 'hand-over') {
     // Mostrar resultado y continuar automáticamente.
@@ -278,6 +291,79 @@ function reasoningList(lines) {
 function setReasoning(html) {
   if (!SHOW_THINKING) return;
   $('play-reasoning').innerHTML = html;
+}
+
+// ---------- Historial de partidas (persistente en el navegador) ----------
+
+function loadHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(arr) {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(arr));
+  } catch {
+    /* almacenamiento no disponible */
+  }
+}
+
+function recordGameOnce() {
+  if (gameSaved || !state || state.phase !== 'game-over') return;
+  gameSaved = true;
+  const hist = loadHistory();
+  hist.push({
+    ts: Date.now(),
+    me: state.scores[0],
+    ai: state.scores[1],
+    won: state.scores[0] > state.scores[1],
+    log: state.log.slice(),
+  });
+  if (hist.length > 200) hist.splice(0, hist.length - 200);
+  saveHistory(hist);
+  renderHistory();
+}
+
+function renderHistory() {
+  const hist = loadHistory();
+  const wins = hist.filter((g) => g.won).length;
+  const losses = hist.length - wins;
+  const summary = $('history-summary');
+  if (summary) {
+    summary.textContent = hist.length
+      ? `Vos ${wins} – ${losses} Máquina  ·  ${hist.length} partida${hist.length === 1 ? '' : 's'}`
+      : 'Todavía no terminaste ninguna partida.';
+  }
+  const list = $('history-list');
+  if (!list) return;
+  clear(list);
+  for (const g of hist.slice().reverse().slice(0, 30)) {
+    const row = document.createElement('div');
+    row.textContent = `${g.won ? '✅' : '❌'} ${g.me}-${g.ai}  ·  ${new Date(g.ts).toLocaleString()}`;
+    row.style.cursor = 'pointer';
+    row.title = 'Ver jugadas de la partida';
+    row.addEventListener('click', () => {
+      const next = row.nextSibling;
+      if (next && next.dataset && next.dataset.log === '1') {
+        next.remove();
+        return;
+      }
+      const pre = document.createElement('div');
+      pre.dataset.log = '1';
+      pre.style.whiteSpace = 'pre-wrap';
+      pre.style.opacity = '0.6';
+      pre.style.fontSize = '0.72rem';
+      pre.style.padding = '4px 0 8px';
+      pre.textContent = (g.log || [])
+        .map((l) => l.replace(/J0/g, 'Vos').replace(/J1/g, 'Máquina'))
+        .join('\n');
+      row.after(pre);
+    });
+    list.appendChild(row);
+  }
 }
 
 function escapeHtml(s) {

@@ -111,7 +111,16 @@ function trickContext(state) {
 
 // ---------- Probabilidad de ganar la mano (Monte Carlo) ----------
 
-export function handWinProbability(state, me, samples = 300) {
+// Peso de una mano del rival según su fuerza (las manos fuertes cantan más).
+// Sirve para condicionar cuando el rival cantó: su mano no es al azar.
+function oppStrengthWeight(cards) {
+  if (!cards.length) return 1;
+  const mean = cards.reduce((s, c) => s + trucoPower(c), 0) / cards.length;
+  return Math.max(0.2, Math.min(1, (mean - 3) / 6));
+}
+
+// opts.callerStrong: pondera asumiendo que el rival cantó (sesgo a mano fuerte).
+export function handWinProbability(state, me, samples = 300, opts = {}) {
   const opp = other(me);
   const oppCount = state.hands[opp].length;
   const myRemaining = state.hands[me];
@@ -128,16 +137,20 @@ export function handWinProbability(state, me, samples = 300) {
     return solveEndgame(handsLeft, state.results, lead, turn, state.mano) === me ? 1 : 0;
   }
 
-  let wins = 0;
+  const oppPlayed = playedBy(state, opp);
+  let wTotal = 0;
+  let wWins = 0;
   for (let i = 0; i < samples; i++) {
     const oppCards = shuffle(unknownDeck).slice(0, oppCount);
     const { lead, turn } = trickContext(state);
     const handsLeft = [];
     handsLeft[me] = myRemaining;
     handsLeft[opp] = oppCards;
-    if (solveEndgame(handsLeft, state.results, lead, turn, state.mano) === me) wins++;
+    const w = opts.callerStrong ? oppStrengthWeight(oppCards.concat(oppPlayed)) : 1;
+    wTotal += w;
+    if (solveEndgame(handsLeft, state.results, lead, turn, state.mano) === me) wWins += w;
   }
-  return wins / samples;
+  return wTotal === 0 ? 0.5 : wWins / wTotal;
 }
 
 // Probabilidad de ganar la mano si juego una carta concreta ahora.
@@ -552,7 +565,8 @@ function decideTrucoResponse(state, player, { mix, samples }) {
     }
   }
 
-  const p = handWinProbability(state, player, samples);
+  // El rival cantó el truco: asumimos su mano algo más fuerte que al azar.
+  const p = handWinProbability(state, player, samples, { callerStrong: true });
   const lastBet = state.truco.chain[state.truco.chain.length - 1];
   const Vq = TRUCO_QUIERO[lastBet];
   const Vnq = TRUCO_NOQUIERO[lastBet];
@@ -622,9 +636,12 @@ function decidePlay(state, player, { mix, samples }) {
   const cantaProbFor = (bet, p) => {
     const evCanta = rolloutEV(state, player, { type: 'call', bet }, R);
     const w = evWait();
-    let prob = 1 / (1 + Math.exp(-2.5 * (evCanta - w)));
-    const bluff = ramp(1 - p, 0.9, 1.0) * 0.1;
-    prob = Math.min(0.92, clamp01(Math.max(prob, bluff)));
+    // Margen: exige una ventaja real de EV antes de cantar (juego menos
+    // ofensivo). Pendiente más suave + farol más chico.
+    const margin = 0.08;
+    let prob = 1 / (1 + Math.exp(-2.2 * (evCanta - w - margin)));
+    const bluff = ramp(1 - p, 0.92, 1.0) * 0.06;
+    prob = Math.min(0.9, clamp01(Math.max(prob, bluff)));
     return { prob, evCanta, evWait: w };
   };
 

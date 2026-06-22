@@ -297,5 +297,15 @@ const rMatch = recommend(matchPoint, 0, { mix: false, samples: 40 });
 ok(rMatch.action.type === 'call' && rMatch.action.bet === 'faltaenvido',
    `a 1 del triunfo canta falta envido (${rMatch.action.type} ${rMatch.action.bet || ''})`);
 
+// --- Truco: condicionar a rival fuerte no sube la probabilidad ---
+const midHand = createHandState({
+  target: 30, scores: [0, 0], dealer: 1,
+  hands: [[{ rank: 10, suit: 'oro' }, { rank: 11, suit: 'basto' }, { rank: 7, suit: 'copa' }],
+          [{ rank: 5, suit: 'oro' }, { rank: 4, suit: 'basto' }, { rank: 6, suit: 'copa' }]],
+});
+const pRaw = handWinProbability(midHand, 0, 600);
+const pCond = handWinProbability(midHand, 0, 600, { callerStrong: true });
+ok(pCond <= pRaw + 0.02, `condicionar a rival fuerte baja (o no sube) la prob (raw=${pRaw.toFixed(2)} cond=${pCond.toFixed(2)})`);
+
 console.log(`\n${passed} pruebas OK, ${failed} fallaron.`);
 process.exit(failed > 0 ? 1 : 0);
