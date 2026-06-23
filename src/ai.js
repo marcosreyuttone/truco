@@ -589,9 +589,10 @@ function decideTrucoResponse(state, player, { mix, samples }) {
   }
 
   const lastBet = state.truco.chain[state.truco.chain.length - 1];
-  // El rival cantó/recantó: cuanto más alto el canto, más fuerte lo asumimos
-  // (te resube a vale cuatro casi siempre con mano fuerte).
-  const center = { truco: 4, retruco: 6, valecuatro: 8 }[lastBet];
+  // El rival cantó/recantó: nudge leve. El truco común se canta liberal (casi
+  // sin sesgo); un recanto alto sí señala mano fuerte. La probabilidad cruda
+  // (Monte Carlo) sigue siendo el driver principal.
+  const center = { truco: 2, retruco: 4, valecuatro: 6 }[lastBet];
   const p = handWinProbability(state, player, samples, { callerStrong: true, center });
   const Vq = TRUCO_QUIERO[lastBet];
   const Vnq = TRUCO_NOQUIERO[lastBet];
