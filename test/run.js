@@ -323,5 +323,20 @@ ok(
 ok(consistentOppCombos(shownState, 1, deckNo6oro, 3, []) === null, 'no aplica con 3 ocultas (rendimiento)');
 ok(consistentOppCombos({ envido: { resolved: false } }, 1, deckNo6oro, 2, []) === null, 'no aplica si no se reveló');
 
+// --- Envido muere una vez que el truco fue querido ---
+function envidoOfferedAfterTrucoQuiero() {
+  const s = createHandState({
+    target: 30, scores: [0, 0], dealer: 1,
+    hands: [[{ rank: 7, suit: 'espada' }, { rank: 3, suit: 'oro' }, { rank: 5, suit: 'copa' }],
+            [{ rank: 1, suit: 'espada' }, { rank: 2, suit: 'oro' }, { rank: 4, suit: 'copa' }]],
+  });
+  s.truco = { chain: ['truco'], accepted: true, caller: 0, canRaiseBy: 1 };
+  s.phase = 'play'; s.turn = 0;
+  s.envido = { chain: [], state: 'none', caller: null, resolved: false };
+  s.tricks = [{ plays: [] }]; s.results = [];
+  return legalActions(s).some((a) => a.type === 'call' && ['envido', 'realenvido', 'faltaenvido'].includes(a.bet));
+}
+ok(!envidoOfferedAfterTrucoQuiero(), 'no se puede cantar envido si el truco ya fue querido');
+
 console.log(`\n${passed} pruebas OK, ${failed} fallaron.`);
 process.exit(failed > 0 ? 1 : 0);

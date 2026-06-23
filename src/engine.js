@@ -148,11 +148,12 @@ export function legalActions(state) {
     const next = TRUCO_NEXT[state.truco.chain[state.truco.chain.length - 1] || ''];
     if (next) actions.push({ type: 'call', bet: next });
     // "El envido es primero": se puede contestar el truco cantando envido sólo
-    // si es la 1ª baza, no se resolvió, y el que responde NO jugó carta todavía
-    // (si ya tiró, perdió su chance de envido).
+    // si es la 1ª baza, no se resolvió, el que responde NO jugó carta todavía,
+    // y el truco AÚN NO fue querido (una vez aceptado, el envido ya no va).
     if (
       completedTricks(state) === 0 &&
       !state.envido.resolved &&
+      !state.truco.accepted &&
       !hasPlayedFirstTrick(state, p)
     ) {
       actions.push({ type: 'call', bet: 'envido' });
@@ -167,11 +168,13 @@ export function legalActions(state) {
   for (const card of state.hands[p]) {
     actions.push({ type: 'play', card });
   }
-  // Envido: sólo en la primera baza, si no se resolvió y sin haber jugado carta.
+  // Envido: sólo en la 1ª baza, sin resolver, sin haber jugado carta, y con el
+  // truco todavía no querido (una vez aceptado el truco, no se puede más envido).
   if (
     completedTricks(state) === 0 &&
     !state.envido.resolved &&
     state.envido.state === 'none' &&
+    !state.truco.accepted &&
     !hasPlayedFirstTrick(state, p)
   ) {
     actions.push({ type: 'call', bet: 'envido' });

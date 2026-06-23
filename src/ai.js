@@ -607,9 +607,14 @@ function decideEnvidoResponse(state, player, { mix }) {
 function decideTrucoResponse(state, player, { mix, samples }) {
   const reasoning = [];
 
-  // "El envido es primero": en la 1ª, sin haber jugado carta todavía y con
-  // envido muy fuerte, conviene cantarlo en respuesta al truco.
-  if (state.results.length === 0 && !state.envido.resolved && playedBy(state, player).length === 0) {
+  // "El envido es primero": en la 1ª, sin haber jugado carta, con el truco aún
+  // no querido, y con envido muy fuerte, conviene cantarlo en respuesta al truco.
+  if (
+    state.results.length === 0 &&
+    !state.envido.resolved &&
+    !state.truco.accepted &&
+    playedBy(state, player).length === 0
+  ) {
     const ana = envidoAnalysis(state, player);
     if (ana.pWin > 0.75 && ana.myPoints >= 28) {
       reasoning.push(`Tenés ${ana.myPoints} de envido y va primero: conviene cantarlo.`);
@@ -700,8 +705,13 @@ function decidePlay(state, player, { mix, samples }) {
     return { prob, evCanta, evWait: w };
   };
 
-  // 1) Envido (sólo en la 1ª, si nadie cantó) — por EV, igual que el truco.
-  if (state.results.length === 0 && !state.envido.resolved && state.envido.state === 'none') {
+  // 1) Envido (sólo en la 1ª, si nadie cantó y el truco no fue querido) — por EV.
+  if (
+    state.results.length === 0 &&
+    !state.envido.resolved &&
+    state.envido.state === 'none' &&
+    !state.truco.accepted
+  ) {
     const ana = envidoAnalysis(state, player);
     // A 1 punto del triunfo, la falta envido arriesga 1 (no 2) y alcanza para
     // ganar la partida: conviene cantar falta en vez de envido.
