@@ -143,13 +143,16 @@ function trickContext(state) {
 
 // Peso de una mano del rival según su fuerza (las manos fuertes cantan más).
 // Sirve para condicionar cuando el rival cantó: su mano no es al azar.
-function oppStrengthWeight(cards) {
+function oppStrengthWeight(cards, center = 4) {
   if (!cards.length) return 1;
   const mean = cards.reduce((s, c) => s + trucoPower(c), 0) / cards.length;
-  return Math.max(0.2, Math.min(1, (mean - 3) / 6));
+  // Logística: el rival que canta este nivel tiene mano fuerte. A mayor
+  // "center", más se concentra el peso en manos fuertes (baja mi probabilidad).
+  return 1 / (1 + Math.exp(-(mean - center)));
 }
 
 // opts.callerStrong: pondera asumiendo que el rival cantó (sesgo a mano fuerte).
+// opts.center: cuán fuerte se asume (sube con el nivel del canto).
 export function handWinProbability(state, me, samples = 300, opts = {}) {
   const opp = other(me);
   const oppCount = state.hands[opp].length;
@@ -176,7 +179,7 @@ export function handWinProbability(state, me, samples = 300, opts = {}) {
     const handsLeft = [];
     handsLeft[me] = myRemaining;
     handsLeft[opp] = oppCards;
-    const w = opts.callerStrong ? oppStrengthWeight(oppCards.concat(oppPlayed)) : 1;
+    const w = opts.callerStrong ? oppStrengthWeight(oppCards.concat(oppPlayed), opts.center) : 1;
     wTotal += w;
     if (solveEndgame(handsLeft, state.results, lead, turn, state.mano) === me) wWins += w;
   }
@@ -585,9 +588,11 @@ function decideTrucoResponse(state, player, { mix, samples }) {
     }
   }
 
-  // El rival cantó el truco: asumimos su mano algo más fuerte que al azar.
-  const p = handWinProbability(state, player, samples, { callerStrong: true });
   const lastBet = state.truco.chain[state.truco.chain.length - 1];
+  // El rival cantó/recantó: cuanto más alto el canto, más fuerte lo asumimos
+  // (te resube a vale cuatro casi siempre con mano fuerte).
+  const center = { truco: 4, retruco: 6, valecuatro: 8 }[lastBet];
+  const p = handWinProbability(state, player, samples, { callerStrong: true, center });
   const Vq = TRUCO_QUIERO[lastBet];
   const Vnq = TRUCO_NOQUIERO[lastBet];
   const t = quieroThreshold(Vq, Vnq);
