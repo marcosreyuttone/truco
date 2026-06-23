@@ -4,6 +4,7 @@ import {
   envidoPoints,
   compareCards,
   makeDeck,
+  removeCards,
 } from '../src/cards.js';
 import {
   newGame,
@@ -20,6 +21,7 @@ import {
   envidoAnalysis,
   handWinProbability,
   responseDistribution,
+  consistentOppCombos,
 } from '../src/ai.js';
 
 let passed = 0;
@@ -306,6 +308,20 @@ const midHand = createHandState({
 const pRaw = handWinProbability(midHand, 0, 600);
 const pCond = handWinProbability(midHand, 0, 600, { callerStrong: true });
 ok(pCond <= pRaw + 0.02, `condicionar a rival fuerte baja (o no sube) la prob (raw=${pRaw.toFixed(2)} cond=${pCond.toFixed(2)})`);
+
+// --- Deducción por tanto revelado: si quiso envido y mostró cartas ---
+const sixOro = { rank: 6, suit: 'oro' };
+const shownState = { envido: { resolved: true, shown: [0, 33] } }; // rival (J1) = 33
+const deckNo6oro = removeCards(makeDeck(), [sixOro]);
+const combos33 = consistentOppCombos(shownState, 1, deckNo6oro, 2, [sixOro]);
+ok(combos33 && combos33.length > 0, 'hay manos consistentes con 33 mostrando 6 de oro');
+const with7oro = combos33.filter((c) => c.some((card) => card.rank === 7 && card.suit === 'oro')).length;
+ok(
+  with7oro / combos33.length > 0.8,
+  `con 33 y 6 de oro, casi seguro tiene el 7 de oro (${with7oro}/${combos33.length}); el resto es otro 6+7`
+);
+ok(consistentOppCombos(shownState, 1, deckNo6oro, 3, []) === null, 'no aplica con 3 ocultas (rendimiento)');
+ok(consistentOppCombos({ envido: { resolved: false } }, 1, deckNo6oro, 2, []) === null, 'no aplica si no se reveló');
 
 console.log(`\n${passed} pruebas OK, ${failed} fallaron.`);
 process.exit(failed > 0 ? 1 : 0);

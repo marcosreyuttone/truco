@@ -171,10 +171,13 @@ export function handWinProbability(state, me, samples = 300, opts = {}) {
   }
 
   const oppPlayed = playedBy(state, opp);
+  const combos = consistentOppCombos(state, opp, unknownDeck, oppCount, oppPlayed);
   let wTotal = 0;
   let wWins = 0;
   for (let i = 0; i < samples; i++) {
-    const oppCards = shuffle(unknownDeck).slice(0, oppCount);
+    const oppCards = combos
+      ? combos[(Math.random() * combos.length) | 0]
+      : shuffle(unknownDeck).slice(0, oppCount);
     const { lead, turn } = trickContext(state);
     const handsLeft = [];
     handsLeft[me] = myRemaining;
@@ -200,10 +203,16 @@ export function winProbAfterPlaying(state, me, card, samples = 160) {
   const trick = state.tricks[state.tricks.length - 1];
   const iAmLeading = trick.plays.length === 0;
 
+  const combos = consistentOppCombos(state, opp, unknownDeck, oppCount, playedBy(state, opp));
   let wins = 0;
   const n = oppCount === 0 ? 1 : samples;
   for (let i = 0; i < n; i++) {
-    const oppCards = oppCount === 0 ? [] : shuffle(unknownDeck).slice(0, oppCount);
+    const oppCards =
+      oppCount === 0
+        ? []
+        : combos
+        ? combos[(Math.random() * combos.length) | 0]
+        : shuffle(unknownDeck).slice(0, oppCount);
     const handsLeft = [];
     handsLeft[me] = myRemaining;
     handsLeft[opp] = oppCards;
@@ -271,6 +280,22 @@ function combinations(arr, k) {
   };
   rec(0, 0);
   return res;
+}
+
+// Si el rival QUISO el envido se revelaron los tantos. A partir de ahí, sus
+// cartas ocultas no son al azar: deben ser consistentes con su tanto + lo que
+// ya jugó. Devuelve la lista de combos posibles (o null = muestreo libre).
+// Sólo cuando es barato y útil (<=2 ocultas) para no ralentizar nada.
+export function consistentOppCombos(state, opp, unknownDeck, count, oppPlayed) {
+  if (count < 1 || count > 2) return null;
+  const env = state.envido;
+  if (!env || !env.resolved || !env.shown) return null;
+  const target = env.shown[opp];
+  if (target == null) return null;
+  const ok = combinations(unknownDeck, count).filter(
+    (c) => envidoPoints(oppPlayed.concat(c)) === target
+  );
+  return ok.length ? ok : null; // sin consistentes (raro) => muestreo libre
 }
 
 export function envidoAnalysis(state, me, opts = {}) {
@@ -486,10 +511,14 @@ function rolloutEV(state, player, firstAction, R) {
   const known = state.hands[player].concat(allPlayed(state));
   const unknownDeck = removeCards(makeDeck(), known);
   const oppCount = state.hands[opp].length;
+  const combos = consistentOppCombos(state, opp, unknownDeck, oppCount, playedBy(state, opp));
   let sum = 0;
   for (let i = 0; i < R; i++) {
     const s = structuredClone(state);
-    s.hands[opp] = shuffle(unknownDeck).slice(0, oppCount); // creencia sobre el rival
+    // creencia sobre el rival, consistente con el tanto que reveló (si lo hizo)
+    s.hands[opp] = combos
+      ? combos[(Math.random() * combos.length) | 0].slice()
+      : shuffle(unknownDeck).slice(0, oppCount);
     const base = s.scores.slice();
     let st = applyAction(s, firstAction);
     let guard = 0;
