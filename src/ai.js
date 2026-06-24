@@ -506,17 +506,27 @@ function fastPolicy(state, player) {
 
 // Valor esperado (en puntos netos de la mano) de tomar `firstAction` ahora y
 // seguir con la política rápida. Promedia sobre manos posibles del rival.
-function rolloutEV(state, player, firstAction, R) {
+// oppHands (opcional): manos del rival pre-sorteadas (para CRN). Si se pasan,
+// se usan las MISMAS en cada opción comparada → la varianza del reparto se
+// cancela en la diferencia de EV.
+function rolloutEV(state, player, firstAction, R, oppHands = null) {
   const opp = other(player);
-  const known = state.hands[player].concat(allPlayed(state));
-  const unknownDeck = removeCards(makeDeck(), known);
-  const oppCount = state.hands[opp].length;
-  const combos = consistentOppCombos(state, opp, unknownDeck, oppCount, playedBy(state, opp));
+  let combos = null;
+  let unknownDeck = null;
+  let oppCount = 0;
+  if (!oppHands) {
+    const known = state.hands[player].concat(allPlayed(state));
+    unknownDeck = removeCards(makeDeck(), known);
+    oppCount = state.hands[opp].length;
+    combos = consistentOppCombos(state, opp, unknownDeck, oppCount, playedBy(state, opp));
+  }
   let sum = 0;
   for (let i = 0; i < R; i++) {
     const s = structuredClone(state);
     // creencia sobre el rival, consistente con el tanto que reveló (si lo hizo)
-    s.hands[opp] = combos
+    s.hands[opp] = oppHands
+      ? oppHands[i].slice()
+      : combos
       ? combos[(Math.random() * combos.length) | 0].slice()
       : shuffle(unknownDeck).slice(0, oppCount);
     const base = s.scores.slice();
@@ -536,7 +546,27 @@ function rolloutEV(state, player, firstAction, R) {
 // estable (menos ruido Monte Carlo), a costa de tiempo. En la web (samples=220)
 // da ~110; en simulaciones/tests (samples bajos) baja para no ser lento.
 function rolloutCount(samples) {
-  return Math.max(10, Math.min(150, Math.round(samples / 2)));
+  return Math.max(12, Math.min(250, Math.round(samples * 0.83)));
+}
+
+// Pre-sortea R manos posibles del rival (respetando la deducción del envido).
+// Sirve para CRN: usar las MISMAS manos al evaluar todas las opciones de una
+// decisión, así la suerte del reparto se cancela en la comparación.
+function sampleOppHands(state, player, R) {
+  const opp = other(player);
+  const known = state.hands[player].concat(allPlayed(state));
+  const unknownDeck = removeCards(makeDeck(), known);
+  const oppCount = state.hands[opp].length;
+  const combos = consistentOppCombos(state, opp, unknownDeck, oppCount, playedBy(state, opp));
+  const out = [];
+  for (let i = 0; i < R; i++) {
+    out.push(
+      combos
+        ? combos[(Math.random() * combos.length) | 0].slice()
+        : shuffle(unknownDeck).slice(0, oppCount)
+    );
+  }
+  return out;
 }
 
 // ---------- Recomendación principal ----------
@@ -683,18 +713,24 @@ function decidePlay(state, player, { mix, samples }) {
   const choice = chooseCard(state, player, Math.max(40, Math.round(samples / 2)));
   const bestCard = choice.card;
 
+  // CRN: pre-sorteamos las manos del rival UNA vez y las reusamos en todas las
+  // opciones (cantar/esperar) → la suerte del reparto se cancela en la
+  // comparación, así la decisión es menos ruidosa sin más cómputo.
+  const oppHands = sampleOppHands(state, player, R);
+
   // "Esperar" = jugar la mejor carta y seguir con la política (conserva la
   // opción de cantar después). Se calcula una sola vez y se reusa.
   let evWaitCache = null;
   const evWait = () => {
-    if (evWaitCache === null) evWaitCache = rolloutEV(state, player, { type: 'play', card: bestCard }, R);
+    if (evWaitCache === null)
+      evWaitCache = rolloutEV(state, player, { type: 'play', card: bestCard }, R, oppHands);
     return evWaitCache;
   };
 
   // Decisión de cantar X por EV: compara cantar ahora vs esperar. Mezcla cerca
   // de la indiferencia + farol acotado con mano floja (mismo criterio para todo).
   const cantaProbFor = (bet, p) => {
-    const evCanta = rolloutEV(state, player, { type: 'call', bet }, R);
+    const evCanta = rolloutEV(state, player, { type: 'call', bet }, R, oppHands);
     const w = evWait();
     // Margen: exige una ventaja real de EV antes de cantar (juego menos
     // ofensivo). Pendiente más suave + farol más chico.
