@@ -151,6 +151,21 @@ function oppStrengthWeight(cards, center = 4) {
   return 1 / (1 + Math.exp(-(mean - center)));
 }
 
+// Peso de una mano del rival dada la INFORMACIÓN que reveló con sus apuestas:
+//  - si cantó truco => mano fuerte (callerStrong).
+//  - si RECHAZÓ el envido (no quiero) => su tanto es probablemente bajo, así
+//    que pesan más las manos con tanto bajo.
+function oppBeliefWeight(oppFull, state, opp, opts) {
+  let w = 1;
+  if (opts && opts.callerStrong) w *= oppStrengthWeight(oppFull, opts.center);
+  const e = state.envido;
+  if (e && e.resolved && e.state === 'declined' && other(e.caller) === opp) {
+    const t = envidoPoints(oppFull);
+    w *= 1 / (1 + Math.exp((t - 24) / 3)); // tanto alto => peso bajo
+  }
+  return w;
+}
+
 // opts.callerStrong: pondera asumiendo que el rival cantó (sesgo a mano fuerte).
 // opts.center: cuán fuerte se asume (sube con el nivel del canto).
 export function handWinProbability(state, me, samples = 300, opts = {}) {
@@ -182,7 +197,7 @@ export function handWinProbability(state, me, samples = 300, opts = {}) {
     const handsLeft = [];
     handsLeft[me] = myRemaining;
     handsLeft[opp] = oppCards;
-    const w = opts.callerStrong ? oppStrengthWeight(oppCards.concat(oppPlayed), opts.center) : 1;
+    const w = oppBeliefWeight(oppCards.concat(oppPlayed), state, opp, opts);
     wTotal += w;
     if (solveEndgame(handsLeft, state.results, lead, turn, state.mano) === me) wWins += w;
   }
