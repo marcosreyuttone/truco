@@ -546,7 +546,9 @@ function rolloutEV(state, player, firstAction, R, oppHands = null) {
 // estable (menos ruido Monte Carlo), a costa de tiempo. En la web (samples=220)
 // da ~110; en simulaciones/tests (samples bajos) baja para no ser lento.
 function rolloutCount(samples) {
-  return Math.max(12, Math.min(250, Math.round(samples * 0.83)));
+  // CRN ya baja el ruido; mantenemos R moderado para que la web sea ágil
+  // (~150 rollouts ≈ ~220 ms/jugada).
+  return Math.max(12, Math.min(160, Math.round(samples / 2)));
 }
 
 // Pre-sortea R manos posibles del rival (respetando la deducción del envido).
