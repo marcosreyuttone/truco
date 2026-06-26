@@ -18,4 +18,6 @@ export const SHOW_THINKING = false;
 //            más puntos contra mentirosos, pero es más explotable).
 //
 // Poné false para volver atrás sin perder nada: la heurística queda intacta.
-export const ENVIDO_CFR = true;
+// (Por ahora en false: jugamos con la heurística; el CFR queda en el repo,
+// listo para reactivar cambiando esto a true.)
+export const ENVIDO_CFR = false;

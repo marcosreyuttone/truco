@@ -17,15 +17,46 @@ let busy = false;
 let suggested = null; // carta sugerida por el botón de ayuda
 let gameSaved = false; // para guardar cada partida una sola vez
 
+// Registro ESTRUCTURADO de la partida, mano por mano, para poder re-resolver
+// cada mano con el motor (minimax/EV) y analizar errores. Guarda el reparto
+// completo (las 6 cartas) y la secuencia de acciones; algo que el log de texto
+// no permite reconstruir.
+let gameLog = null;
+
 const HISTORY_KEY = 'truco-history-v1';
 
 const $ = (id) => document.getElementById(id);
+
+const serializeCard = (c) => (c ? { rank: c.rank, suit: c.suit } : undefined);
+
+// Empieza el registro de una mano nueva: captura el reparto ANTES de jugar.
+function captureDeal() {
+  if (!gameLog || !state) return;
+  gameLog.hands.push({
+    dealer: state.dealer,
+    mano: state.mano,
+    scores: state.scores.slice(),
+    deal: state.hands.map((h) => h.map(serializeCard)),
+    actions: [],
+  });
+}
+
+// Aplica una acción registrándola en la mano en curso (actor + acción).
+function applyAndLog(action) {
+  const cur = gameLog && gameLog.hands[gameLog.hands.length - 1];
+  if (cur) {
+    const actor = state.phase === 'play' ? state.turn : state.responder;
+    cur.actions.push({ p: actor, type: action.type, bet: action.bet, card: serializeCard(action.card) });
+  }
+  return applyAction(state, action);
+}
 
 export function initPlay() {
   $('btn-new-game').addEventListener('click', () => startGame());
   $('btn-new-hand').addEventListener('click', () => {
     if (state && (state.phase === 'hand-over')) {
       state = nextHand(state);
+      captureDeal();
       suggested = null;
       loop();
     }
@@ -41,6 +72,8 @@ export function initPlay() {
     saveHistory([]);
     renderHistory();
   });
+  const exportBtn = $('btn-export-history');
+  if (exportBtn) exportBtn.addEventListener('click', exportHistory);
   renderHistory();
   startGame();
 }
@@ -50,6 +83,8 @@ function startGame() {
   busy = false;
   suggested = null;
   gameSaved = false;
+  gameLog = { ts: Date.now(), hands: [] };
+  captureDeal();
   setReasoning('<div class="muted">Empezó la partida. Sos "mano" en la primera.</div>');
   loop();
 }
@@ -70,6 +105,7 @@ function loop() {
       busy = false;
       if (state.phase === 'hand-over') {
         state = nextHand(state);
+        captureDeal();
         suggested = null;
         loop();
       }
@@ -84,7 +120,7 @@ function loop() {
       const rec = recommend(state, 1, { mix: true, samples: 300 });
       const action = rec.action || legalActions(state).find((a) => a.player === 1);
       showMachineReasoning(rec, action);
-      state = applyAction(state, action);
+      state = applyAndLog(action);
       busy = false;
       loop();
     }, 700);
@@ -245,7 +281,7 @@ function renderActions() {
 function humanAction(action) {
   if (busy) return;
   suggested = null;
-  state = applyAction(state, action);
+  state = applyAndLog(action);
   loop();
 }
 
@@ -315,12 +351,14 @@ function saveHistory(arr) {
 function recordGameOnce() {
   if (gameSaved || !state || state.phase !== 'game-over') return;
   gameSaved = true;
+  const detail = gameLog ? gameLog.hands : [];
   const record = {
     ts: Date.now(),
     me: state.scores[0],
     ai: state.scores[1],
     won: state.scores[0] > state.scores[1],
     log: state.log.slice(),
+    detail, // reparto + acciones por mano (re-resolvible con el motor)
   };
   const hist = loadHistory();
   hist.push(record);
@@ -329,14 +367,29 @@ function recordGameOnce() {
   renderHistory();
 
   // Copia central (todos los jugadores) en Supabase. No bloquea ni rompe.
+  // OJO: requiere una columna `detail jsonb` en la tabla (ver train/README).
+  // Si no existe, el insert falla en silencio y queda igual el guardado local.
   pushGame({
     player_id: playerId(),
     score_me: record.me,
     score_ai: record.ai,
     won: record.won,
     log: record.log,
+    detail,
     app: 'truco-web',
   });
+}
+
+// Descarga el historial completo (con detalle) como JSON, para analizarlo.
+function exportHistory() {
+  const data = JSON.stringify(loadHistory(), null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `truco-historial-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function renderHistory() {

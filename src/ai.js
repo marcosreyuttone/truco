@@ -141,6 +141,30 @@ function trickContext(state) {
   return { lead: null, turn: leader };
 }
 
+// Análisis con INFORMACIÓN PERFECTA (ambas manos conocidas): ganador del juego
+// de cartas restante por minimax exacto. Sirve para auditar errores de juego de
+// cartas a posteriori (no usa muestreo: las dos manos están dadas).
+export function exactCardWinner(state) {
+  const { lead, turn } = trickContext(state);
+  return solveEndgame([state.hands[0], state.hands[1]], state.results, lead, turn, state.mano);
+}
+// ¿Qué resultado fuerza jugar la carta `card` ahora (info perfecta)? Devuelve el
+// ganador minimax de la mano si se juega esa carta y luego ambos juegan óptimo.
+export function exactWinnerIfPlay(state, player, card) {
+  const { lead, turn } = trickContext(state);
+  if (turn !== player) return null;
+  const nh = [state.hands[0].slice(), state.hands[1].slice()];
+  nh[player] = nh[player].filter((x) => !(x.rank === card.rank && x.suit === card.suit));
+  if (!lead) return solveEndgame(nh, state.results, { player, card }, other(player), state.mano);
+  const cmp = compareCards(lead.card, card);
+  const res = cmp > 0 ? lead.player : cmp < 0 ? player : 'parda';
+  const nresults = state.results.concat([res]);
+  const hw = handWinner(nresults, state.mano);
+  if (hw !== null) return hw;
+  const leader = res === 'parda' ? state.mano : res;
+  return solveEndgame(nh, nresults, null, leader, state.mano);
+}
+
 // ---------- Probabilidad de ganar la mano (Monte Carlo) ----------
 
 // Peso de una mano del rival según su fuerza (las manos fuertes cantan más).
