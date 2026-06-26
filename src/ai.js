@@ -445,8 +445,10 @@ export function responseDistribution(p, Vq, Vnq, raise) {
     const t2 = quieroThreshold(raise.Vq, raise.Vnq);
     // Subir por valor: manos muy fuertes (sale de la masa de "quiero").
     const valueRaise = ramp(p, 0.8, 0.95) * quiero;
-    // Subir de farol: manos muy flojas; frecuencia acotada por t2 (balance).
-    const bluffRaise = ramp(1 - p, 0.86, 1.0) * Math.min(0.5, t2) * no;
+    // Subir de farol: solo con manos MUY flojas y a frecuencia baja (un farol
+    // ocasional para no ser predecible, no un spew). Cap al 8%: subir a real/
+    // falta con tanto pésimo casi nunca conviene (el que cantó suele pagar).
+    const bluffRaise = ramp(1 - p, 0.9, 1.0) * Math.min(0.08, t2) * no;
     raiseProb = valueRaise + bluffRaise;
     quiero -= valueRaise;
     no -= bluffRaise;

@@ -41,14 +41,22 @@ En la web: pestaña Jugar → **Exportar (JSON)** baja todo el historial local.
 
 ## 2) Copia central en Supabase (opcional)
 
-Para guardar `detail` también en la base central, agregá la columna una vez:
+Esquema recomendado (corré una vez en *SQL Editor*). Agrega `detail`, una marca
+de tiempo y un par de índices para consultar cómodo:
 
 ```sql
 alter table public.games add column if not exists detail jsonb;
+alter table public.games add column if not exists created_at timestamptz default now();
+create index if not exists games_player_idx on public.games (player_id);
+create index if not exists games_ts_idx on public.games (ts);
 ```
 
-(Si no la agregás, el guardado central sigue andando pero sin `detail`; el
-guardado local y el export sí lo tienen.)
+(Si no agregás `detail`, el guardado central sigue andando pero sin ese campo; el
+guardado local y el export sí lo tienen. El front ya es robusto: si la columna
+no existe, reintenta el insert sin `detail` y la partida no se pierde.)
+
+Para consultar el detalle ya guardado se usa jsonb directamente, p. ej. cuántas
+manos por partida: `select id, jsonb_array_length(detail) from public.games;`.
 
 ## 3) Bajar la data central de forma segura
 
