@@ -25,7 +25,7 @@ async function fetchAll() {
   const PAGE = 1000;
   for (let from = 0; ; from += PAGE) {
     const to = from + PAGE - 1;
-    const res = await fetch(`${URL_BASE}/rest/v1/${TABLE}?select=*&order=ts.asc`, {
+    const res = await fetch(`${URL_BASE}/rest/v1/${TABLE}?select=*&order=created_at.asc`, {
       headers: {
         apikey: KEY,
         Authorization: `Bearer ${KEY}`,
@@ -47,7 +47,7 @@ async function fetchAll() {
 // Mapea el formato de la base al que espera analyze.js.
 function toAnalyzerFormat(rows) {
   return rows.map((r) => ({
-    ts: r.ts,
+    ts: r.created_at ? new Date(r.created_at).getTime() : null,
     me: r.score_me,
     ai: r.score_ai,
     won: r.won, // true => ganó el humano

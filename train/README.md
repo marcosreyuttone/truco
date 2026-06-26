@@ -48,7 +48,7 @@ de tiempo y un par de índices para consultar cómodo:
 alter table public.games add column if not exists detail jsonb;
 alter table public.games add column if not exists created_at timestamptz default now();
 create index if not exists games_player_idx on public.games (player_id);
-create index if not exists games_ts_idx on public.games (ts);
+create index if not exists games_created_idx on public.games (created_at);
 ```
 
 (Si no agregás `detail`, el guardado central sigue andando pero sin ese campo; el
