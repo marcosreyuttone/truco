@@ -33,20 +33,31 @@ export function playerId() {
   }
 }
 
+async function post(record) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify(record),
+  });
+  return res.ok; // 4xx (p. ej. columna inexistente) => false, no tira
+}
+
 // Envía una partida terminada. Fire-and-forget: nunca tira error hacia afuera.
+// Robusto: si la columna `detail` todavía no existe en la base, reintenta sin
+// ella para no perder la partida (los campos core sí se guardan siempre).
 export async function pushGame(record) {
   if (!isRemoteEnabled()) return;
   try {
-    await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
-      method: 'POST',
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=minimal',
-      },
-      body: JSON.stringify(record),
-    });
+    const ok = await post(record);
+    if (!ok && record && record.detail !== undefined) {
+      const { detail, ...core } = record;
+      await post(core);
+    }
   } catch {
     /* sin conexión: ya quedó guardado en localStorage */
   }
