@@ -8,3 +8,14 @@
 //
 // Para reactivarlo, poné: export const SHOW_THINKING = true;
 export const SHOW_THINKING = false;
+
+// Interruptor de la política de ENVIDO.
+//
+//   true  -> la máquina usa la estrategia de equilibrio (CFR): casi inexplotable
+//            y le gana mano a mano a la heurística, pero saca menos puntos contra
+//            rivales débiles que farolean mal.
+//   false -> vuelve a la heurística anterior (sobre-explota al rival débil:
+//            más puntos contra mentirosos, pero es más explotable).
+//
+// Poné false para volver atrás sin perder nada: la heurística queda intacta.
+export const ENVIDO_CFR = true;

@@ -29,6 +29,8 @@ import {
   other,
   applyAction,
 } from './engine.js';
+import { ENVIDO_STRATEGY } from './envido-strategy.js';
+import { ENVIDO_CFR } from './config.js';
 
 // ---------- Resolución exacta del final de cartas (minimax) ----------
 //
@@ -604,22 +606,92 @@ export function recommend(state, player, opts = {}) {
   return { action: null, reasoning: ['No es el turno de este jugador.'] };
 }
 
+// ---------- Estrategia de envido por CFR (equilibrio, casi inexplotable) ----------
+//
+// La estrategia fue entrenada en el sub-juego de envido (contexto 0-0, falta=30)
+// con CFR; ver train/envido_cfr.js. Es casi inexplotable y le gana mano a mano
+// a la heurística por EV. Acá la mapeamos al estado del engine.
+//
+// Asientos del sub-juego: 0 = mano, 1 = pie. La clave del infoset es
+// "tanto|hist/fase:asiento". El historial usa tokens E/R/F y un prefijo 'p' si
+// el que abrió fue el pie (es decir, el mano dejó pasar el envido).
+const ENV_TOK = { envido: 'E', realenvido: 'R', faltaenvido: 'F' };
+const ENV_BET = { E: 'envido', R: 'realenvido', F: 'faltaenvido' };
+
+function seatOf(state, p) {
+  return state.mano === p ? 0 : 1;
+}
+function cfrEnvidoInfo(state, player) {
+  const tanto = envidoPoints(state.hands[player].concat(playedBy(state, player)));
+  if (state.phase === 'envido-response' && state.responder === player) {
+    const chain = state.envido.chain;
+    const tokens = chain.map((b) => ENV_TOK[b]).join('');
+    const L = chain.length;
+    const responderSeat = seatOf(state, player);
+    const openerSeat = L % 2 === 1 ? (responderSeat === 0 ? 1 : 0) : responderSeat;
+    const hist = (openerSeat === 1 ? 'p' : '') + tokens;
+    const key = tanto + '|' + hist + '/respond:' + responderSeat;
+    const acts = ['n', 'q', ...envidoNextOptionsLocal(chain).map((b) => ENV_TOK[b])];
+    return { key, acts, kind: 'respond', tanto };
+  }
+  // open (cantar en 1ª mano)
+  const seat = seatOf(state, player);
+  const hist = seat === 0 ? '' : 'p';
+  const key = tanto + '|' + hist + '/open:' + seat;
+  return { key, acts: ['p', 'E', 'R', 'F'], kind: 'open', tanto };
+}
+// Devuelve la distribución de probabilidad CFR alineada a las acciones del nodo,
+// o null si el infoset no existe (entonces se usa la heurística como respaldo).
+function cfrEnvidoDist(state, player) {
+  if (!ENVIDO_CFR) return null; // flag en config.js: false => heurística
+  const info = cfrEnvidoInfo(state, player);
+  const probs = ENVIDO_STRATEGY[info.key];
+  if (!probs || probs.length !== info.acts.length) return null;
+  return { ...info, probs };
+}
+
 function decideEnvidoResponse(state, player, { mix }) {
-  // El rival cantó: asumimos que su tanto está sesgado a ser alto.
-  const ana = envidoAnalysis(state, player, { callerStrong: true });
   const chain = state.envido.chain;
   const Vq = envidoChainValue(chain, state);
   const Vnq = envidoNoQuieroValue(chain, state);
+  // ana sólo para mostrar (P(ganar), tanto); la DECISIÓN sale del CFR.
+  const ana = envidoAnalysis(state, player, { callerStrong: true });
   const p = ana.pWin;
-
   const reasoning = [];
-  reasoning.push(`Tu envido: ${ana.myPoints}. P(ganar) ≈ ${(p * 100).toFixed(0)}% (asumiendo que el rival cantó con buen tanto)${ana.iAmMano ? ', sos mano' : ''}.`);
+  reasoning.push(`Tu envido: ${ana.myPoints}. P(ganar) ≈ ${(p * 100).toFixed(0)}%${ana.iAmMano ? ', sos mano' : ''}.`);
 
+  const cfr = cfrEnvidoDist(state, player);
+  if (cfr) {
+    // Mapea la distribución de equilibrio a acciones del engine.
+    let dist = [];
+    for (let i = 0; i < cfr.acts.length; i++) {
+      const tok = cfr.acts[i];
+      const prob = cfr.probs[i];
+      if (prob <= 1e-6) continue;
+      if (tok === 'n') dist.push({ action: { type: 'noquiero' }, prob, label: 'No quiero' });
+      else if (tok === 'q') dist.push({ action: { type: 'quiero' }, prob, label: 'Quiero' });
+      else {
+        const bet = ENV_BET[tok];
+        dist.push({ action: { type: 'call', bet }, prob, label: labelLocal(bet) });
+      }
+    }
+    normalizeDist(dist);
+    // Si bajarse entrega la partida, no se baja (ajuste por marcador).
+    dist = forcePlayIfFoldLoses(dist, state, state.envido.caller, Vnq);
+    reasoning.push('Respuesta por estrategia de equilibrio (CFR, casi inexplotable).');
+    reasoning.push(describeMix(dist));
+    const options = dist.map((d) => ({
+      action: d.action,
+      label: d.label,
+      ev: d.action.type === 'noquiero' ? -Vnq : evQuiero(p, Vq),
+    }));
+    return { action: chooseFromDist(dist, mix), reasoning, winProb: null, envido: ana, distribution: dist, options };
+  }
+
+  // --- Respaldo heurístico (si el infoset no está en la tabla CFR) ---
   const nexts = envidoNextOptionsLocal(chain);
   let raise = null;
   if (nexts.length) {
-    // A 1 del triunfo, o con tanto casi seguro, escalar a la falta (arriesga
-    // menos y cierra la partida); si no, al real envido.
     const needed = state.target - state.scores[player];
     const bet =
       (needed === 1 || p > 0.92) && nexts.includes('faltaenvido')
@@ -631,24 +703,15 @@ function decideEnvidoResponse(state, player, { mix }) {
     raise = { bet, Vq: envidoChainValue(nc, state), Vnq: envidoNoQuieroValue(nc, state) };
   }
   let dist = responseDistribution(p, Vq, Vnq, raise);
-  // Si bajarse entrega la partida, no se baja.
   dist = forcePlayIfFoldLoses(dist, state, state.envido.caller, Vnq);
   reasoning.push(`Umbral para querer: ${(quieroThreshold(Vq, Vnq) * 100).toFixed(0)}%.`);
   reasoning.push(describeMix(dist));
-
   const options = dist.map((d) => ({
     action: d.action,
     label: d.label,
     ev: d.action.type === 'noquiero' ? -Vnq : evQuiero(p, Vq),
   }));
-  return {
-    action: chooseFromDist(dist, mix),
-    reasoning,
-    winProb: null,
-    envido: ana,
-    distribution: dist,
-    options,
-  };
+  return { action: chooseFromDist(dist, mix), reasoning, winProb: null, envido: ana, distribution: dist, options };
 }
 
 function decideTrucoResponse(state, player, { mix, samples }) {
@@ -758,23 +821,48 @@ function decidePlay(state, player, { mix, samples }) {
     return { prob, evCanta, evWait: w };
   };
 
-  // 1) Envido (sólo en la 1ª, si nadie cantó y el truco no fue querido) — por EV.
+  // 1) Envido (sólo en la 1ª, si nadie cantó y el truco no fue querido).
   if (
     state.results.length === 0 &&
     !state.envido.resolved &&
     state.envido.state === 'none' &&
     !state.truco.accepted
   ) {
-    const ana = envidoAnalysis(state, player);
-    // A 1 punto del triunfo, la falta envido arriesga 1 (no 2) y alcanza para
-    // ganar la partida: conviene cantar falta en vez de envido.
-    const needed = state.target - state.scores[player];
-    const bet = needed === 1 ? 'faltaenvido' : ana.pWin >= 0.85 ? 'realenvido' : 'envido';
-    const { prob, evCanta, evWait: w } = cantaProbFor(bet, ana.pWin);
-    reasoning.push(`Envido: tenés ${ana.myPoints}, P(ganar) ≈ ${(ana.pWin * 100).toFixed(0)}%.`);
-    reasoning.push(`EV cantar ${labelLocal(bet)} = ${evCanta.toFixed(2)} vs esperar = ${w.toFixed(2)} → cantar ${(prob * 100).toFixed(0)}%.`);
-    if (gate(prob, mix)) {
-      return { action: { type: 'call', bet }, reasoning, envido: ana, singProb: prob };
+    const cfr = cfrEnvidoDist(state, player); // nodo "abrir"
+    if (cfr) {
+      // Decisión por estrategia de equilibrio (CFR): cantar/pasar y con qué.
+      const PASS = { type: 'pass' };
+      const dist = [];
+      for (let i = 0; i < cfr.acts.length; i++) {
+        const tok = cfr.acts[i];
+        const prob = cfr.probs[i];
+        if (prob <= 1e-6) continue;
+        if (tok === 'p') dist.push({ action: PASS, prob, label: 'No cantar' });
+        else dist.push({ action: { type: 'call', bet: ENV_BET[tok] }, prob, label: labelLocal(ENV_BET[tok]) });
+      }
+      normalizeDist(dist);
+      const chosen = chooseFromDist(dist, mix);
+      if (chosen.type === 'call') {
+        let bet = chosen.bet;
+        // A 1 del triunfo, la falta arriesga 1 y alcanza para ganar: mejor falta.
+        if (state.target - state.scores[player] === 1) bet = 'faltaenvido';
+        reasoning.push('Envido por estrategia de equilibrio (CFR, casi inexplotable).');
+        reasoning.push(describeMix(dist));
+        const sp = dist.find((d) => d.action === chosen);
+        return { action: { type: 'call', bet }, reasoning, singProb: sp ? sp.prob : null };
+      }
+      // chosen = pasar: no canta envido; sigue al truco / carta.
+    } else {
+      // --- Respaldo heurístico (por EV con rollouts) ---
+      const ana = envidoAnalysis(state, player);
+      const needed = state.target - state.scores[player];
+      const bet = needed === 1 ? 'faltaenvido' : ana.pWin >= 0.85 ? 'realenvido' : 'envido';
+      const { prob, evCanta, evWait: w } = cantaProbFor(bet, ana.pWin);
+      reasoning.push(`Envido: tenés ${ana.myPoints}, P(ganar) ≈ ${(ana.pWin * 100).toFixed(0)}%.`);
+      reasoning.push(`EV cantar ${labelLocal(bet)} = ${evCanta.toFixed(2)} vs esperar = ${w.toFixed(2)} → cantar ${(prob * 100).toFixed(0)}%.`);
+      if (gate(prob, mix)) {
+        return { action: { type: 'call', bet }, reasoning, envido: ana, singProb: prob };
+      }
     }
   }
 

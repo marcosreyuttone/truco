@@ -192,6 +192,50 @@ explotabilidad con *best response* para certificar cercanía a Nash. La
 implementación actual (Paper 2) puede servir de **baseline** y banco de pruebas
 para esa migración.
 
+### Paper 3 — CFR del sub-juego de envido (implementado y en producción)
+
+**Resumen.** El CFR del truco *completo* explota en cantidad de infosets (ver
+Paper 1). Pero el **envido es un sub-juego chico y autocontenido**: la única
+información privada de cada jugador es su **tanto** (`0..33`) y el árbol de
+apuestas es pequeño (`envido → real → falta`, con `quiero/no quiero/subir`). Eso
+lo hace **resoluble casi exacto** con CFR de tabla. Lo entrenamos por separado y
+**cableamos su estrategia de equilibrio al envido de la web**.
+
+**Cómo.** `train/envido_cfr.js` corre **CFR vainilla con muestreo de azar**
+(cada iteración reparte 6 cartas reales y propaga arrepentimientos por el árbol
+de envido; contexto inicial 0-0, falta = 30). Converge en segundos:
+
+```bash
+node train/envido_cfr.js 1500000   # ~20 s, 528 infosets
+```
+
+Produce `train/envido_strategy.json` y `src/envido-strategy.js` (la web importa
+este último; son ~19 KB). El asiento del sub-juego es `0 = mano`, `1 = pie`; la
+clave del infoset es `"tanto|historia/fase:asiento"`.
+
+**Resultados (medidos).** Promediando ambos asientos, puntos de envido por mano:
+
+| Métrica | CFR | Heurística (Paper 2) |
+|---|---|---|
+| **Explotabilidad** (cuánto le saca una *best response*) | **≈ 0** (Nash) | alta (replica ~1.2) |
+| Mano a mano (CFR como sujeto) | **+0.11/mano a favor del CFR** | — |
+| Vs. rival que **farolea mal** (calling-station) | +0.05 | **+0.45** |
+| Tasa de partidas ganadas (juego completo) | 96% vs aleatorio · 93% vs heurístico | igual (dentro del ruido) |
+
+**La lección (Nash vs. explotación).** El CFR juega el **equilibrio**: es **casi
+inexplotable** y **le gana mano a mano** a la heurística. Pero contra un rival
+que **miente mal** (paga de más), la heurística saca **más** puntos porque
+**sobre-explota** al débil — justamente lo que un equilibrio *no* hace. Es el
+clásico trade-off: *maximizar contra un rival concreto* (best response, la
+heurística) vs. *no perder contra ninguno* (Nash, el CFR). Elegimos el CFR como
+política por defecto porque el norte del proyecto es ser **inexplotable**, y
+**no cuesta tasa de victorias** contra los baselines.
+
+**Volver atrás.** En `src/config.js`, `ENVIDO_CFR = false` restaura la
+heurística anterior sin perder nada (queda intacta como respaldo). El marcador
+extremo (p. ej. *falta a 1 punto*) se maneja igual con un override que prefiere
+**falta envido**.
+
 ## Validación empírica
 
 Para verificar que la metodología (Paper 2) realmente juega bien, hay un
